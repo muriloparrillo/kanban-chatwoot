@@ -1,0 +1,30 @@
+class Account < ApplicationRecord
+  has_many :funnels, dependent: :destroy
+  has_many :leads,   dependent: :destroy
+  has_many :tags,    dependent: :destroy
+
+  validates :chatwoot_account_id, :name, :chatwoot_base_url, :chatwoot_api_access_token, presence: true
+  validates :chatwoot_account_id, uniqueness: true
+
+  before_validation :ensure_tokens
+
+  # Build an authenticated Chatwoot API client for this account
+  def chatwoot_client
+    @chatwoot_client ||= Chatwoot::Client.new(
+      base_url:     chatwoot_base_url,
+      access_token: chatwoot_api_access_token,
+      account_id:   chatwoot_account_id
+    )
+  end
+
+  def default_funnel
+    funnels.where(is_default: true).first || funnels.order(:position).first
+  end
+
+  private
+
+  def ensure_tokens
+    self.account_token   ||= SecureRandom.hex(24)
+    self.webhook_secret  ||= SecureRandom.hex(32)
+  end
+end

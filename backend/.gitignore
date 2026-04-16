@@ -1,0 +1,8 @@
+/tmp/*
+/log/*
+/storage/*
+/node_modules
+.env
+.byebug_history
+*.rbc
+.bundle

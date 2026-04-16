@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-kanban_chatwoot}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on: [postgres, redis]
+    environment:
+      RAILS_ENV: production
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-please_change_me_64_chars_minimum_____________________}
+      DATABASE_URL: postgres://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-kanban_chatwoot}
+      REDIS_URL: redis://redis:6379/0
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      UPLOADS_DIR: /app/storage/uploads
+    volumes:
+      - uploads:/app/storage/uploads
+    ports:
+      - "3000:3000"
+    command: >
+      bash -c "bundle exec rails db:prepare &&
+               bundle exec puma -C config/puma.rb -p 3000"
+
+  sidekiq:
+    build: ./backend
+    restart: unless-stopped
+    depends_on: [postgres, redis]
+    command: bundle exec sidekiq
+    environment:
+      RAILS_ENV: production
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-please_change_me_64_chars_minimum_____________________}
+      DATABASE_URL: postgres://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-kanban_chatwoot}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - uploads:/app/storage/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ""
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:
+  uploads:

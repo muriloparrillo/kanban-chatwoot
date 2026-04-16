@@ -1,0 +1,29 @@
+{
+  "name": "kanban-chatwoot-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kanban visual de leads para Chatwoot (Dashboard App embed)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173"
+  },
+  "dependencies": {
+    "vue": "^3.4.21",
+    "vue-router": "^4.3.0",
+    "pinia": "^2.1.7",
+    "axios": "^1.6.8",
+    "vuedraggable": "^4.1.0",
+    "sortablejs": "^1.15.2",
+    "@vueuse/core": "^10.9.0",
+    "date-fns": "^3.6.0",
+    "dompurify": "^3.0.11"
+  },
+  "devDependencies": {
+    "vite": "^5.2.0",
+    "@vitejs/plugin-vue": "^5.0.4",
+    "tailwindcss": "^3.4.3",
+    "postcss": "^8.4.38",
+    "autoprefixer": "^10.4.19"
+  }
+}
