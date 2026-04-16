@@ -1,6 +1,14 @@
 /**
  * Kanban/CRM Inject — item CRM nativo no sidebar do Chatwoot
- * Robusto: aguarda DOM + Vue, sem erros de null.
+ * v2.0 — seletores robustos, sem dependência de idioma, debug detalhado.
+ *
+ * Como carregar no Chatwoot:
+ *   Opção A (UserScript via Tampermonkey/Violentmonkey):
+ *     Cole este conteúdo num novo script com @match para a URL do seu Chatwoot.
+ *   Opção B (Chatwoot self-hosted — custom script):
+ *     Adicione ao HTML do Chatwoot: <script src="https://SEU_KANBAN/kanban-inject.js"></script>
+ *
+ * Debug: abra o Console do navegador e procure por "[CRM]".
  */
 (function () {
   'use strict';
@@ -8,15 +16,25 @@
   /* ─── CONFIGURAÇÃO ──────────────────────────────────────────────────── */
   var KANBAN_URL    = 'https://vai-novofoco-kanban-chatwoot-frontend.dutk9f.easypanel.host';
   var ACCOUNT_TOKEN = '0fb0a7572850a512f7127633a15e844673bd3e6cf839fa75';
+  var DEBUG         = true; // false para silenciar logs em produção
 
-  /* ─── GUARD duplo ───────────────────────────────────────────────────── */
+  /* ─── GUARD ─────────────────────────────────────────────────────────── */
   if (window.__crmInjected) return;
   window.__crmInjected = true;
 
   /* ─── ESTADO ─────────────────────────────────────────────────────────── */
-  var menuOpen = true;
+  var menuOpen       = true;
   var currentFunnelId = null;
-  var panelEl = null;
+  var panelEl        = null;
+  var retryCount     = 0;
+  var MAX_RETRIES    = 60; // 60 × 500ms = 30 segundos
+
+  function log() {
+    if (!DEBUG) return;
+    var args = Array.prototype.slice.call(arguments);
+    args.unshift('[CRM]');
+    console.log.apply(console, args);
+  }
 
   /* ─── ESTILOS ────────────────────────────────────────────────────────── */
   function injectStyles() {
@@ -24,7 +42,8 @@
     var s = document.createElement('style');
     s.id = 'crm-inject-style';
     s.textContent = [
-      '#crm-panel{position:fixed;top:0;left:200px;right:0;bottom:0;background:#fff;',
+      /* painel principal */
+      '#crm-panel{position:fixed;top:0;left:60px;right:0;bottom:0;background:#fff;',
       'z-index:9998;display:none;flex-direction:column;',
       'box-shadow:-3px 0 12px rgba(0,0,0,.18)}',
       '#crm-panel.crm-open{display:flex}',
@@ -35,12 +54,14 @@
       '#crm-panel-close{background:none;border:none;cursor:pointer;padding:4px 8px;',
       'border-radius:6px;font-size:16px;color:#6b7280;line-height:1}',
       '#crm-panel-close:hover{background:#e4e7ed;color:#1c2b33}',
+      /* dark mode */
       'html.dark #crm-panel{background:#1c2b33}',
       'html.dark #crm-panel-bar{background:#243641;border-color:#3a4a54}',
       'html.dark #crm-panel-bar span{color:#e5eef3}',
       'html.dark #crm-panel-close{color:#9babb4}',
       'html.dark #crm-panel-close:hover{background:#3a4a54;color:#e5eef3}',
-      '#crm-sidebar-group{list-style:none;margin:0;padding:0}',
+      /* grupo CRM no sidebar */
+      '#crm-sidebar-group{list-style:none;margin:4px 0;padding:0 8px}',
       '#crm-group-header{display:flex;align-items:center;justify-content:space-between;',
       'padding:6px 8px;border-radius:8px;cursor:pointer;',
       'color:#3d4f58;font-size:12px;font-weight:600;letter-spacing:.04em;',
@@ -69,6 +90,7 @@
       'background:#1f93ff;margin-right:6px;display:inline-block}',
       '.crm-skeleton{height:28px;border-radius:6px;background:#e4e7ed;',
       'margin:2px 0;animation:crm-pulse 1.2s ease infinite}',
+      'html.dark .crm-skeleton{background:#2e404c}',
       '@keyframes crm-pulse{0%,100%{opacity:1}50%{opacity:.4}}'
     ].join('');
     var head = document.head || document.getElementsByTagName('head')[0];
@@ -77,7 +99,7 @@
 
   /* ─── PAINEL IFRAME ─────────────────────────────────────────────────── */
   function ensurePanel() {
-    if (panelEl || !document.body) return false;
+    if (panelEl || !document.body) return;
     panelEl = document.createElement('div');
     panelEl.id = 'crm-panel';
     panelEl.innerHTML =
@@ -85,29 +107,32 @@
         '<span>\uD83D\uDCCB CRM \u2014 Kanban</span>' +
         '<button id="crm-panel-close" title="Fechar (Esc)">\u2715</button>' +
       '</div>' +
-      '<iframe id="crm-iframe" src="" title="CRM Kanban"></iframe>';
+      '<iframe id="crm-iframe" src="" allow="*" title="CRM Kanban"></iframe>';
     document.body.appendChild(panelEl);
-
     document.getElementById('crm-panel-close').addEventListener('click', closePanel);
-    document.addEventListener('keydown', function(e){ if(e.key==='Escape') closePanel(); });
-    return true;
+    document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePanel(); });
+    log('painel iframe criado');
   }
 
   function syncPanelLeft() {
     if (!panelEl) return;
-    var aside = document.querySelector('aside');
-    if (aside) panelEl.style.left = aside.offsetWidth + 'px';
+    // Tenta ler a largura real do aside/sidebar
+    var sidebar = document.querySelector('.woot-sidebar') ||
+                  document.querySelector('aside') ||
+                  document.querySelector('[class*="sidebar"]');
+    var leftPx = sidebar ? sidebar.offsetWidth : 60;
+    panelEl.style.left = leftPx + 'px';
   }
 
   function openPanel(funnelId) {
-    if (!panelEl) return;
+    if (!panelEl) { ensurePanel(); }
     syncPanelLeft();
     var iframe = document.getElementById('crm-iframe');
     if (!iframe) return;
     var url = KANBAN_URL + '/?account_token=' + ACCOUNT_TOKEN + '&embedded=true';
     if (funnelId) url += '#/board/' + funnelId;
     if (iframe.src !== url) iframe.src = url;
-    currentFunnelId = funnelId;
+    currentFunnelId = funnelId || null;
     panelEl.classList.add('crm-open');
     updateActiveItem();
   }
@@ -122,20 +147,17 @@
   /* ─── BUSCAR FUNIS ──────────────────────────────────────────────────── */
   function fetchFunnels(cb) {
     fetch(KANBAN_URL + '/api/v1/funnels', {
-      headers: {
-        'X-Account-Token': ACCOUNT_TOKEN,
-        'Content-Type': 'application/json'
-      }
+      headers: { 'X-Account-Token': ACCOUNT_TOKEN }
     })
-    .then(function(r){ return r.json(); })
-    .then(function(data){ cb(Array.isArray(data) ? data : (data.funnels || [])); })
-    .catch(function(){ cb([]); });
+    .then(function(r) { return r.json(); })
+    .then(function(data) { cb(Array.isArray(data) ? data : (data.funnels || [])); })
+    .catch(function(err) { log('fetch funnels error:', err); cb([]); });
   }
 
-  /* ─── SVG ICONS ─────────────────────────────────────────────────────── */
+  /* ─── ICONS ─────────────────────────────────────────────────────────── */
   var CRM_ICON =
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-    'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+    'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">' +
     '<rect x="2" y="3" width="4" height="18" rx="1.2"/>' +
     '<rect x="9" y="3" width="4" height="12" rx="1.2"/>' +
     '<rect x="16" y="3" width="4" height="15" rx="1.2"/>' +
@@ -149,10 +171,11 @@
 
   /* ─── ACTIVE STATE ──────────────────────────────────────────────────── */
   function updateActiveItem() {
-    document.querySelectorAll('.crm-funnel-item').forEach(function(el){
-      var fid = el.getAttribute('data-funnel-id');
-      el.classList.toggle('crm-active', fid && Number(fid) === currentFunnelId);
-    });
+    var items = document.querySelectorAll('.crm-funnel-item');
+    for (var i = 0; i < items.length; i++) {
+      var fid = items[i].getAttribute('data-funnel-id');
+      items[i].classList.toggle('crm-active', fid && Number(fid) === currentFunnelId);
+    }
     var header = document.getElementById('crm-group-header');
     if (header) header.classList.toggle('crm-active', !!currentFunnelId);
   }
@@ -179,42 +202,85 @@
       btn.innerHTML =
         '<span class="crm-funnel-dot" style="background:' + (f.color || '#1f93ff') + '"></span>' +
         '<span>' + (f.name || 'Funil') + '</span>';
-      btn.addEventListener('click', function(e){
+      btn.addEventListener('click', function(e) {
         e.stopPropagation();
         openPanel(f.id);
       });
       li.appendChild(btn);
       ul.appendChild(li);
     });
+    log('funis carregados:', list.length);
   }
 
-  /* ─── ENCONTRAR "CONVERSAS" ─────────────────────────────────────────── */
-  function findConversasGroup() {
-    var nav = document.querySelector('aside nav');
-    if (!nav) return null;
-    var children = Array.from(nav.children);
-    for (var i = 0; i < children.length; i++) {
-      var nodes = children[i].querySelectorAll('*');
-      for (var j = 0; j < nodes.length; j++) {
-        if (nodes[j].children.length === 0 &&
-            nodes[j].textContent.trim() === 'Conversas') {
-          return children[i];
-        }
+  /* ─── ENCONTRAR CONTAINER DO NAV ─────────────────────────────────────
+   * Tenta múltiplas estratégias — funciona em Chatwoot v2, v3 e variantes.
+   * ──────────────────────────────────────────────────────────────────── */
+  function findNavContainer() {
+    // Lista de seletores em ordem de preferência
+    var selectors = [
+      // Chatwoot v3 — estrutura mais comum
+      'aside nav',
+      '.woot-sidebar nav',
+      // Chatwoot v2 — Foundation CSS
+      'aside .menu.vertical',
+      '.woot-sidebar .menu.vertical',
+      // Fallbacks genéricos
+      '.primary-nav',
+      '.sidebar-nav',
+      '.navigation-container nav',
+      '.navigation-container ul',
+      // aside direto
+      '.woot-sidebar',
+      'aside'
+    ];
+
+    for (var i = 0; i < selectors.length; i++) {
+      var el = document.querySelector(selectors[i]);
+      if (el) {
+        log('nav encontrado via seletor:', selectors[i], el);
+        return el;
       }
     }
-    return children[0] || null;
+
+    // Estratégia por link de conversas (independente de versão)
+    var convLink =
+      document.querySelector('a[href*="/conversations"]') ||
+      document.querySelector('a[href*="/dashboard"]');
+    if (convLink) {
+      log('nav encontrado via link de conversas');
+      // Sobe na árvore até encontrar aside, nav, ul ou section
+      var node = convLink;
+      while (node && node !== document.body) {
+        var tag = node.tagName ? node.tagName.toUpperCase() : '';
+        if (tag === 'ASIDE' || tag === 'NAV' || tag === 'UL' || tag === 'SECTION') {
+          return node;
+        }
+        node = node.parentElement;
+      }
+      return convLink.parentElement;
+    }
+
+    return null;
   }
 
   /* ─── INJEÇÃO PRINCIPAL ─────────────────────────────────────────────── */
   function inject() {
     if (document.getElementById('crm-sidebar-group')) return; // já injetado
 
-    // Garantir estilos e painel
     injectStyles();
     ensurePanel();
 
-    var anchor = findConversasGroup();
-    if (!anchor) return; // nav ainda não renderizou, observer vai re-tentar
+    var container = findNavContainer();
+    if (!container) {
+      retryCount++;
+      if (retryCount <= 3 || retryCount % 10 === 0) {
+        log('sidebar ainda não encontrado, tentativa', retryCount + '/' + MAX_RETRIES,
+            '| aside:', !!document.querySelector('aside'),
+            '| .woot-sidebar:', !!document.querySelector('.woot-sidebar'),
+            '| nav:', !!document.querySelector('nav'));
+      }
+      return;
+    }
 
     // Montar grupo CRM
     var group = document.createElement('div');
@@ -229,7 +295,12 @@
         '<li class="crm-skeleton" style="width:75%"></li>' +
       '</ul>';
 
-    anchor.parentNode.insertBefore(group, anchor.nextSibling);
+    // Insere no começo do container (fica no topo do sidebar)
+    if (container.firstChild) {
+      container.insertBefore(group, container.firstChild);
+    } else {
+      container.appendChild(group);
+    }
 
     // Toggle dropdown
     var header = document.getElementById('crm-group-header');
@@ -237,7 +308,7 @@
     var chev   = document.getElementById('crm-chevron');
 
     if (header && list) {
-      header.addEventListener('click', function(){
+      header.addEventListener('click', function() {
         menuOpen = !menuOpen;
         list.classList.toggle('open', menuOpen);
         if (chev) chev.classList.toggle('open', menuOpen);
@@ -247,38 +318,59 @@
       if (chev) chev.classList.add('open');
     }
 
-    // Buscar funis
-    fetchFunnels(function(data){
+    // Buscar funis da API
+    fetchFunnels(function(data) {
       populateFunnels(data);
       updateActiveItem();
     });
 
-    console.log('[CRM Inject] \u2705 sidebar CRM injetado');
+    log('\u2705 sidebar CRM injetado com sucesso!', 'container:', container.tagName, container.className);
   }
+
+  /* ─── RE-INJEÇÃO APÓS NAVEGAÇÃO SPA ─────────────────────────────────
+   * O Vue Router pode re-renderizar o sidebar ao navegar entre rotas.
+   * O observer detecta quando o grupo some e re-injeta.
+   * ──────────────────────────────────────────────────────────────────── */
+  var observer = new MutationObserver(function() {
+    if (!document.getElementById('crm-sidebar-group')) {
+      // Verifica se o sidebar já existe antes de tentar re-injetar
+      if (findNavContainer()) {
+        log('grupo CRM sumiu após navegação — re-injetando');
+        inject();
+      }
+    }
+  });
 
   /* ─── BOOTSTRAP ─────────────────────────────────────────────────────── */
   function boot() {
-    // Observer para quando o Vue renderizar o sidebar
-    var obs = new MutationObserver(function(){
-      if (document.querySelector('aside nav') && !document.getElementById('crm-sidebar-group')) {
-        inject();
-      }
-    });
-    obs.observe(document.documentElement, { childList: true, subtree: true });
+    log('iniciando (v2.0)');
 
-    // Tentativas escalonadas como fallback
-    [0, 500, 1000, 2000, 3500, 5000].forEach(function(ms){
-      setTimeout(inject, ms);
-    });
+    // Observer amplo: observa o documento inteiro
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+
+    // Tentativas periódicas (cada 500ms por até 30s)
+    var interval = setInterval(function() {
+      retryCount++;
+      if (document.getElementById('crm-sidebar-group')) {
+        clearInterval(interval);
+        return;
+      }
+      inject();
+      if (retryCount >= MAX_RETRIES) {
+        clearInterval(interval);
+        log('\u26A0\uFE0F timeout — sidebar n\u00e3o encontrado ap\u00f3s 30s.');
+        log('DOM atual:', document.body ? document.body.innerHTML.substring(0, 500) : 'sem body');
+      }
+    }, 500);
+
+    // Primeira tentativa imediata
+    inject();
   }
 
-  // Aguardar body estar pronto
   if (document.body) {
     boot();
-  } else if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
   } else {
-    setTimeout(boot, 0);
+    document.addEventListener('DOMContentLoaded', boot);
   }
 
 })();
