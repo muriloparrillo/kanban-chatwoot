@@ -12,23 +12,23 @@ module Api
         if account.save
           account.funnels.create!(name: 'Funil Principal', is_default: true) if account.funnels.empty?
           status = account.previously_new_record? ? :created : :ok
-          render json: serialize_account(account, include_secrets: true), status: status
+          render json: serialize_account(account, include_secrets: true, base_url: request.base_url), status: status
         else
           render json: { errors: account.errors.full_messages }, status: :unprocessable_entity
         end
       end
 
       def current
-        render json: serialize_account(current_account)
+        render json: serialize_account(current_account, base_url: request.base_url)
       end
 
       def show
-        render json: serialize_account(current_account)
+        render json: serialize_account(current_account, base_url: request.base_url)
       end
 
       def update
         if current_account.update(account_params.except(:chatwoot_account_id))
-          render json: serialize_account(current_account)
+          render json: serialize_account(current_account, base_url: request.base_url)
         else
           render json: { errors: current_account.errors.full_messages }, status: :unprocessable_entity
         end
@@ -54,7 +54,8 @@ module Api
         )
       end
 
-      def serialize_account(account, include_secrets: false)
+      def serialize_account(account, include_secrets: false, base_url: '')
+        frontend_url = ENV.fetch('FRONTEND_URL', base_url)
         base = {
           id: account.id,
           name: account.name,
@@ -63,7 +64,7 @@ module Api
           account_token: account.account_token,
           last_synced_at: account.last_synced_at,
           settings: account.settings,
-          webhook_url: Rails.application.routes.url_helpers.webhooks_chatwoot_path(account_token: account.account_token)
+          webhook_url: "#{frontend_url}/webhooks/chatwoot/#{account.account_token}"
         }
         base[:webhook_secret] = account.webhook_secret if include_secrets
         base
