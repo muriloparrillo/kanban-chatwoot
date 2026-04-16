@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanban no Chatwoot — Vai Agência Novo Foco
 // @namespace    https://vai-novofoco-kanban-chatwoot-frontend.dutk9f.easypanel.host
-// @version      1.0.0
+// @version      1.1.0
 // @description  Adiciona o Kanban como item nativo no menu lateral do Chatwoot
 // @author       Murilo Parrillo
 // @match        https://vai.agencianovofoco.com.br/*
@@ -23,9 +23,13 @@
 
   /* ─── ESTILOS ────────────────────────────────────────────────────────── */
   const CSS = `
+    /* Painel overlay — abre por cima do conteúdo */
     #kanban-panel {
       position: fixed;
-      top: 0; left: 68px; right: 0; bottom: 0;
+      top: 0;
+      left: 200px;   /* largura do aside do Chatwoot */
+      right: 0;
+      bottom: 0;
       background: #fff;
       z-index: 9998;
       display: none;
@@ -47,36 +51,46 @@
     }
     #kanban-panel-close:hover { background: #e4e7ed; color: #1c2b33; }
 
-    .dark #kanban-panel      { background: #1c2b33; }
-    .dark #kanban-panel-bar  { background: #243641; border-color: #3a4a54; }
-    .dark #kanban-panel-bar span { color: #e5eef3; }
-    .dark #kanban-panel-close    { color: #9babb4; }
-    .dark #kanban-panel-close:hover { background: #3a4a54; color: #e5eef3; }
+    /* Modo escuro (Chatwoot adiciona classe "dark" no <html>) */
+    html.dark #kanban-panel      { background: #1c2b33; }
+    html.dark #kanban-panel-bar  { background: #243641; border-color: #3a4a54; }
+    html.dark #kanban-panel-bar span { color: #e5eef3; }
+    html.dark #kanban-panel-close    { color: #9babb4; }
+    html.dark #kanban-panel-close:hover { background: #3a4a54; color: #e5eef3; }
 
-    #kanban-nav-li {
-      list-style: none; display: flex;
-      align-items: center; justify-content: center; width: 100%;
-    }
-    #kanban-nav-btn {
-      display: flex; flex-direction: column; align-items: center;
-      justify-content: center; gap: 3px; width: 100%;
-      padding: 8px 6px; margin: 2px 0;
-      background: none; border: none; border-radius: 8px;
-      cursor: pointer; color: #6b7280;
+    /* Item de menu — estilo Chatwoot Tailwind moderno */
+    #kanban-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      margin: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      background: none;
+      border: none;
+      width: 100%;
+      text-align: left;
+      color: #3d4f58;
+      font-size: 13px;
+      font-weight: 500;
       transition: background .15s, color .15s;
+      text-decoration: none;
     }
-    #kanban-nav-btn:hover   { background: rgba(31,147,255,.08); color: #1f93ff; }
-    #kanban-nav-btn.kn-active { background: rgba(31,147,255,.14); color: #1f93ff; }
-    .dark #kanban-nav-btn        { color: #9babb4; }
-    .dark #kanban-nav-btn:hover  { background: rgba(31,147,255,.12); color: #1f93ff; }
-    .dark #kanban-nav-btn.kn-active { background: rgba(31,147,255,.18); color: #1f93ff; }
-    #kanban-nav-btn svg  { display: block; }
-    #kanban-nav-btn span { font-size: 9px; font-weight: 500; white-space: nowrap; }
+    #kanban-nav-item:hover              { background: #f0f4f8; color: #1f93ff; }
+    #kanban-nav-item.kn-active          { background: #e8f4ff; color: #1f93ff; font-weight: 600; }
+
+    html.dark #kanban-nav-item          { color: #9babb4; }
+    html.dark #kanban-nav-item:hover    { background: rgba(255,255,255,0.06); color: #1f93ff; }
+    html.dark #kanban-nav-item.kn-active{ background: rgba(31,147,255,0.15); color: #1f93ff; }
+
+    #kanban-nav-item svg { flex-shrink: 0; }
+    #kanban-nav-item span { line-height: 1; }
   `;
 
-  const s = document.createElement('style');
-  s.textContent = CSS;
-  document.head.appendChild(s);
+  const styleEl = document.createElement('style');
+  styleEl.textContent = CSS;
+  document.head.appendChild(styleEl);
 
   /* ─── PAINEL ─────────────────────────────────────────────────────────── */
   const panel = document.createElement('div');
@@ -89,43 +103,61 @@
     '<iframe src="' + KANBAN_FULL_URL + '" allow="*" title="Kanban"></iframe>';
   document.body.appendChild(panel);
 
+  // Ajusta left dinamicamente (caso o aside tenha largura diferente de 200px)
+  function syncPanelLeft() {
+    const aside = document.querySelector('aside');
+    if (aside) panel.style.left = aside.offsetWidth + 'px';
+  }
+
   let navBtn = null;
-  const open  = () => { panel.classList.add('kp-open');    navBtn?.classList.add('kn-active'); };
-  const close = () => { panel.classList.remove('kp-open'); navBtn?.classList.remove('kn-active'); };
-  const toggle= () => panel.classList.contains('kp-open') ? close() : open();
+  const open   = () => { syncPanelLeft(); panel.classList.add('kp-open');    navBtn?.classList.add('kn-active'); };
+  const close  = () => { panel.classList.remove('kp-open'); navBtn?.classList.remove('kn-active'); };
+  const toggle = () => panel.classList.contains('kp-open') ? close() : open();
 
   document.getElementById('kanban-panel-close').addEventListener('click', close);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
 
   /* ─── BOTÃO ──────────────────────────────────────────────────────────── */
-  const ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="4" height="18" rx="1.5"/><rect x="9" y="3" width="4" height="12" rx="1.5"/><rect x="16" y="3" width="4" height="15" rx="1.5"/></svg>';
+  const ICON =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" ' +
+    'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<rect x="2" y="3" width="4" height="18" rx="1.5"/>' +
+    '<rect x="9" y="3" width="4" height="12" rx="1.5"/>' +
+    '<rect x="16" y="3" width="4" height="15" rx="1.5"/>' +
+    '</svg>';
 
-  function buildLi() {
-    const li = document.createElement('li');
-    li.id = 'kanban-nav-li';
-    li.innerHTML = '<button id="kanban-nav-btn" title="Kanban">' + ICON + '<span>Kanban</span></button>';
-    navBtn = li.querySelector('#kanban-nav-btn');
-    navBtn.addEventListener('click', toggle);
-    return li;
+  function buildButton() {
+    const btn = document.createElement('button');
+    btn.id = 'kanban-nav-item';
+    btn.innerHTML = ICON + '<span>Kanban</span>';
+    btn.addEventListener('click', toggle);
+    navBtn = btn;
+    return btn;
   }
 
   /* ─── INJEÇÃO ────────────────────────────────────────────────────────── */
-  const SELECTORS = [
-    '.primary-nav .primary-nav__items:not(.primary-nav__items--bottom)',
-    '.primary-nav ul:first-of-type',
-    '.primary-nav ul',
-    'aside nav ul',
-    '.sidebar-nav ul',
-  ];
+  // No Chatwoot moderno: aside > nav (grid scrollável)
+  function getNav() {
+    return document.querySelector('aside nav') || document.querySelector('nav');
+  }
 
   function inject() {
-    if (document.getElementById('kanban-nav-li')) return;
-    for (const sel of SELECTORS) {
-      const nav = document.querySelector(sel);
-      if (nav) { nav.appendChild(buildLi()); console.log('[Kanban] ✅ injetado'); return; }
-    }
+    if (document.getElementById('kanban-nav-item')) return;
+    const nav = getNav();
+    if (!nav) return;
+
+    // Cria um wrapper para o botão, imitando a estrutura de um grupo do sidebar
+    const wrapper = document.createElement('div');
+    wrapper.id = 'kanban-nav-wrapper';
+    wrapper.style.cssText = 'padding: 2px 0;';
+    wrapper.appendChild(buildButton());
+
+    // Insere no início do nav (antes dos outros grupos)
+    nav.insertBefore(wrapper, nav.firstChild);
+    console.log('[Kanban] ✅ Botão injetado no nav');
   }
 
   new MutationObserver(inject).observe(document.body, { childList: true, subtree: true });
   [0, 300, 800, 1500, 3000, 5000].forEach(ms => setTimeout(inject, ms));
+
 })();
