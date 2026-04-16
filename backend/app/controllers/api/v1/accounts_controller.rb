@@ -7,11 +7,12 @@ module Api
       # Admin bootstrap: register a Chatwoot account on the Kanban by providing
       # the Chatwoot base URL + API Access Token.
       def create
-        account = Account.new(account_params)
+        account = Account.find_or_initialize_by(chatwoot_account_id: account_params[:chatwoot_account_id])
+        account.assign_attributes(account_params)
         if account.save
-          # create a default funnel with default stages
           account.funnels.create!(name: 'Funil Principal', is_default: true) if account.funnels.empty?
-          render json: serialize_account(account, include_secrets: true), status: :created
+          status = account.previously_new_record? ? :created : :ok
+          render json: serialize_account(account, include_secrets: true), status: status
         else
           render json: { errors: account.errors.full_messages }, status: :unprocessable_entity
         end
