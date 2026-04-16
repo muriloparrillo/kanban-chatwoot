@@ -11,7 +11,7 @@
   /* ─── CONFIGURAÇÃO ──────────────────────────────────────────────────── */
   const KANBAN_URL = 'https://vai-novofoco-kanban-chatwoot-frontend.dutk9f.easypanel.host';
   const ACCOUNT_TOKEN = '0fb0a7572850a512f7127633a15e844673bd3e6cf839fa75';
-  const KANBAN_FULL_URL = KANBAN_URL + '/?account_token=' + ACCOUNT_TOKEN;
+  const KANBAN_FULL_URL = KANBAN_URL + '/?account_token=' + ACCOUNT_TOKEN + '&embedded=true';
 
   /* ─── GUARD: não injetar duas vezes ─────────────────────────────────── */
   if (window.__kanbanInjected) return;
@@ -22,7 +22,7 @@
     /* ── Painel overlay ── */
     #kanban-panel {
       position: fixed;
-      top: 0; left: 68px; right: 0; bottom: 0;
+      top: 0; left: 200px; right: 0; bottom: 0;
       background: #fff;
       z-index: 9998;
       display: none;
