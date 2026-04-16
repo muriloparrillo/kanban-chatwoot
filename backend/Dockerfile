@@ -14,4 +14,4 @@ RUN bundle install
 COPY . .
 
 EXPOSE 3000
-CMD ["bundle", "exec", "puma", "-C", "config/puma.rb", "-p", "3000"]
+CMD bash -c "bundle exec rails db:prepare && bundle exec puma -C config/puma.rb -p 3000"
