@@ -3,7 +3,7 @@ Rails.application.routes.draw do
   get '/health', to: 'health#show'
 
   # Public webhook (Chatwoot -> Kanban)
-  post '/webhooks/chatwoot/:account_token', to: 'webhooks#chatwoot'
+  post '/webhooks/chatwoot/:account_token', to: 'webhooks#chatwoot', as: :webhooks_chatwoot
 
   namespace :api do
     namespace :v1 do
