@@ -9,6 +9,7 @@ import FunnelSwitcher from '../components/FunnelSwitcher.vue';
 import BoardFilters from '../components/BoardFilters.vue';
 import LeadModal from '../components/LeadModal.vue';
 import NewLeadButton from '../components/NewLeadButton.vue';
+import ListView from '../components/ListView.vue';
 
 const route = useRouter();
 const routeInfo = useRoute();
@@ -16,6 +17,7 @@ const store = useBoardStore();
 const { stages, filteredLeadsByStage, loading, error, currentFunnelId, funnels } = storeToRefs(store);
 
 const activeLead = ref(null);
+const activeView = ref('kanban'); // 'kanban' | 'list'
 
 onMounted(async () => {
   await store.loadFunnels();
@@ -51,22 +53,78 @@ const closeLead = () => { activeLead.value = null; };
 
 <template>
   <div class="h-full flex flex-col">
+
     <!-- Toolbar -->
-    <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3 bg-white border-b border-slate-200">
-      <FunnelSwitcher :funnels="funnels" :model-value="currentFunnelId"
-        @update:modelValue="(id) => route.push({ name: 'board-funnel', params: { funnelId: id } })"/>
-      <BoardFilters />
-      <NewLeadButton :funnel-id="currentFunnelId" :stages="stages" @created="() => store.loadBoard()"/>
+    <div class="bg-white border-b border-slate-200">
+      <div class="flex flex-wrap items-center gap-3 px-5 py-3">
+
+        <!-- Funil Switcher -->
+        <FunnelSwitcher
+          :funnels="funnels"
+          :model-value="currentFunnelId"
+          @update:modelValue="(id) => route.push({ name: 'board-funnel', params: { funnelId: id } })"
+        />
+
+        <!-- Tabs: Kanban / Lista / Agenda -->
+        <div class="flex items-center gap-0.5 border border-slate-200 rounded-lg p-0.5 bg-slate-50">
+          <button
+            @click="activeView = 'kanban'"
+            :class="[
+              'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+              activeView === 'kanban'
+                ? 'bg-white text-slate-800 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            ]">
+            Kanban
+          </button>
+          <button
+            @click="activeView = 'list'"
+            :class="[
+              'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+              activeView === 'list'
+                ? 'bg-white text-slate-800 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            ]">
+            Lista
+          </button>
+          <button
+            disabled
+            class="px-3 py-1.5 rounded-md text-sm font-medium text-slate-300 cursor-not-allowed select-none"
+            title="Em breve">
+            Agenda
+            <span class="text-xs opacity-70 ml-0.5">(em breve)</span>
+          </button>
+        </div>
+
+        <!-- Espaçador -->
+        <div class="flex-1"></div>
+
+        <!-- Filtros + novo lead -->
+        <BoardFilters />
+        <NewLeadButton
+          :funnel-id="currentFunnelId"
+          :stages="stages"
+          @created="() => store.loadBoard()"
+        />
+      </div>
     </div>
 
-    <!-- Board -->
-    <div v-if="loading" class="flex-1 flex items-center justify-center text-slate-500">Carregando funil…</div>
-    <div v-else-if="error" class="flex-1 flex items-center justify-center text-red-600">{{ error }}</div>
+    <!-- Loading / Error -->
+    <div v-if="loading" class="flex-1 flex items-center justify-center text-slate-500">
+      Carregando funil…
+    </div>
+    <div v-else-if="error" class="flex-1 flex items-center justify-center text-red-600">
+      {{ error }}
+    </div>
 
-    <div v-else class="flex-1 overflow-x-auto overflow-y-hidden scroll-thin">
+    <!-- View: Kanban -->
+    <div v-else-if="activeView === 'kanban'" class="flex-1 overflow-x-auto overflow-y-hidden scroll-thin">
       <div class="flex gap-3 p-3 h-full">
-        <div v-for="stage in stages" :key="stage.id"
-             class="flex flex-col w-64 flex-shrink-0 bg-slate-100 rounded-lg border border-slate-200">
+        <div
+          v-for="stage in stages"
+          :key="stage.id"
+          class="flex flex-col w-64 flex-shrink-0 bg-slate-100 rounded-lg border border-slate-200">
+
           <div class="flex items-center justify-between px-3 py-2 border-b border-slate-200">
             <div class="flex items-center gap-2">
               <span class="w-2.5 h-2.5 rounded-full" :style="{ background: stage.color }"></span>
@@ -98,6 +156,17 @@ const closeLead = () => { activeLead.value = null; };
       </div>
     </div>
 
-    <LeadModal v-if="activeLead" :lead="activeLead" @close="closeLead" @updated="() => store.loadBoard()" />
+    <!-- View: Lista -->
+    <ListView
+      v-else-if="activeView === 'list'"
+      @open-lead="openLead"
+    />
+
+    <LeadModal
+      v-if="activeLead"
+      :lead="activeLead"
+      @close="closeLead"
+      @updated="() => store.loadBoard()"
+    />
   </div>
 </template>
