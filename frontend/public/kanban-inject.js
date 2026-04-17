@@ -1311,14 +1311,76 @@
     if (retryCount >= MAX_RETRIES) clearInterval(sidebarInterval);
   }, 500);
 
+  /* ── Busca templates WhatsApp e retorna via callback ── */
+  function fetchWhatsappTemplates(cb) {
+    var cwId = getChatwootAccountId();
+    if (!cwId) { cb([]); return; }
+
+    function getChatwootAuthHeaders() {
+      try {
+        var raw = document.cookie.split(';').reduce(function(acc, c) {
+          var idx = c.indexOf('=');
+          if (idx < 0) return acc;
+          acc[c.slice(0, idx).trim()] = c.slice(idx + 1).trim();
+          return acc;
+        }, {});
+        var val = raw['cw_d_session_info'];
+        if (!val) return null;
+        var info = JSON.parse(decodeURIComponent(val));
+        if (!info['access-token'] || !info['client'] || !info['uid']) return null;
+        return {
+          'access-token': info['access-token'],
+          'token-type':   info['token-type'] || 'Bearer',
+          'client':       info['client'],
+          'uid':          info['uid']
+        };
+      } catch(e) { return null; }
+    }
+
+    var authHeaders = getChatwootAuthHeaders();
+    if (!authHeaders) { cb([]); return; }
+
+    fetch('/api/v1/accounts/' + cwId + '/inboxes', { headers: authHeaders })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var inboxes = Array.isArray(data) ? data : (data.payload || []);
+        var list = [];
+        inboxes.forEach(function(inbox) {
+          if (inbox.channel_type && inbox.channel_type.indexOf('Whatsapp') !== -1) {
+            var tpls = inbox.message_templates;
+            if (Array.isArray(tpls)) list = list.concat(tpls);
+          }
+        });
+        cb(list.filter(function(t) {
+          return !t.status || t.status === 'APPROVED' || t.status === 'approved';
+        }));
+      })
+      .catch(function() { cb([]); });
+  }
+
   /* ── postMessage: iframe pede para abrir uma conversa ── */
   window.addEventListener('message', function(e) {
-    if (!e.data || e.data.type !== 'crm-open-conversation') return;
-    var convId = e.data.conversationId;
-    if (!convId) return;
-    var accountMatch = window.location.href.match(/\/accounts\/(\d+)/);
-    var accountId = accountMatch ? accountMatch[1] : '1';
-    window.location.href = '/app/accounts/' + accountId + '/conversations/' + convId;
+    if (!e.data) return;
+
+    /* Abre conversa no Chatwoot */
+    if (e.data.type === 'crm-open-conversation') {
+      var convId = e.data.conversationId;
+      if (!convId) return;
+      var accountMatch = window.location.href.match(/\/accounts\/(\d+)/);
+      var accountId = accountMatch ? accountMatch[1] : '1';
+      window.location.href = '/app/accounts/' + accountId + '/conversations/' + convId;
+      return;
+    }
+
+    /* Iframe pede templates WhatsApp */
+    if (e.data.type === 'crm-request-templates') {
+      var source = e.source;
+      if (!source) return;
+      fetchWhatsappTemplates(function(templates) {
+        source.postMessage({ type: 'crm-templates-response', templates: templates }, '*');
+      });
+      return;
+    }
   });
 
   /*

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { ScheduledMessagesAPI, AccountsAPI } from '../services/api';
+import { ScheduledMessagesAPI } from '../services/api';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval,
          isSameDay, isToday, addMonths, subMonths, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -55,24 +55,32 @@ function msgsForDay(day) {
   return msgsByDay.value[format(day, 'yyyy-MM-dd')] || [];
 }
 
-/* ── templates WhatsApp ── */
+/* ── templates WhatsApp via postMessage para o inject.js pai ── */
 const templates        = ref([]);
 const templatesLoading = ref(false);
 const selectedTemplate = ref('');
 
-const loadTemplates = async () => {
+const loadTemplates = () => {
   if (templates.value.length) return;
   templatesLoading.value = true;
-  try {
-    const { data } = await AccountsAPI.messageTemplates();
-    templates.value = Array.isArray(data) ? data.filter(t =>
-      !t.status || t.status === 'APPROVED' || t.status === 'approved'
-    ) : [];
-  } catch {
-    templates.value = [];
-  } finally {
+
+  /* Escuta resposta do inject.js */
+  const handler = (e) => {
+    if (!e.data || e.data.type !== 'crm-templates-response') return;
+    window.removeEventListener('message', handler);
+    templates.value = Array.isArray(e.data.templates) ? e.data.templates : [];
     templatesLoading.value = false;
-  }
+  };
+  window.addEventListener('message', handler);
+
+  /* Timeout de segurança — caso inject.js não responda (standalone/dev) */
+  setTimeout(() => {
+    window.removeEventListener('message', handler);
+    templatesLoading.value = false;
+  }, 5000);
+
+  /* Envia pedido para o frame pai */
+  window.parent.postMessage({ type: 'crm-request-templates' }, '*');
 };
 
 const onTemplateSelect = () => {
