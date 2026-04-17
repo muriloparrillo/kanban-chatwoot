@@ -38,11 +38,27 @@ module Chatwoot
       get("/api/v1/accounts/#{@account_id}/labels")
     end
 
-    def message_templates(template_type: 'whatsapp')
-      get("/api/v1/accounts/#{@account_id}/message_templates",
-          { template_type: template_type }.compact)
-    rescue ApiError
-      # Alguns planos não têm acesso; retorna array vazio em vez de explodir
+    def message_templates(template_type: nil)
+      params = template_type.present? ? { template_type: template_type } : {}
+      raw_res = connection.get("/api/v1/accounts/#{@account_id}/message_templates", params)
+      Rails.logger.info "[CRM] message_templates raw status=#{raw_res.status} body=#{raw_res.body.inspect[0..500]}"
+
+      unless raw_res.success?
+        raise ApiError, "Chatwoot API #{raw_res.status}: #{raw_res.body}"
+      end
+
+      response = raw_res.body
+      # Chatwoot pode retornar Array direto ou { payload: [...] }
+      case response
+      when Array then response
+      when Hash  then response['payload'] || response['templates'] || []
+      else []
+      end
+    rescue ApiError => e
+      Rails.logger.warn "[CRM] message_templates ApiError account=#{@account_id}: #{e.message}"
+      []
+    rescue => e
+      Rails.logger.error "[CRM] message_templates erro inesperado account=#{@account_id}: #{e.message}"
       []
     end
 

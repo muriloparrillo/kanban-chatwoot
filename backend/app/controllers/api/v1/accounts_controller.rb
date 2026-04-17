@@ -47,11 +47,29 @@ module Api
 
       # GET /api/v1/accounts/message_templates
       # Retorna templates de mensagem aprovados do WhatsApp via Chatwoot API
+      # ?debug=1 retorna diagnóstico completo (apenas para troubleshooting)
       def message_templates
-        raw = current_account.chatwoot_client.message_templates
-        templates = (raw.is_a?(Array) ? raw : raw.dig('payload') || raw.dig('templates') || [])
+        client = current_account.chatwoot_client
+        templates = client.message_templates
+
+        Rails.logger.info "[CRM] message_templates account=#{current_account.id} cw_account=#{current_account.chatwoot_account_id} count=#{templates.size}"
+
+        if params[:debug] == '1'
+          # Endpoint diagnóstico: retorna info bruta para investigação
+          raw_res = current_account.chatwoot_client.send(:connection)
+                      .get("/api/v1/accounts/#{current_account.chatwoot_account_id}/message_templates")
+          return render json: {
+            status:    raw_res.status,
+            body:      raw_res.body,
+            templates: templates,
+            account:   current_account.chatwoot_account_id,
+            url:       "#{current_account.chatwoot_base_url}/api/v1/accounts/#{current_account.chatwoot_account_id}/message_templates"
+          }
+        end
+
         render json: templates
-      rescue Chatwoot::Client::ApiError => e
+      rescue => e
+        Rails.logger.error "[CRM] message_templates controller error: #{e.message}"
         render json: { error: e.message }, status: :bad_gateway
       end
 
