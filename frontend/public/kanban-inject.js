@@ -1,6 +1,6 @@
 /**
  * Kanban/CRM Inject — item CRM nativo no sidebar + botão "+ CRM" em conversas e contatos
- * v3.1 — findContactAnchor text+position (Chatwoot v4 / Tailwind)
+ * v3.2 — CRM primeiro no nav de nível superior (não sub-item de Conversas)
  */
 (function () {
   'use strict';
@@ -288,42 +288,54 @@
   }
 
   function findInsertionPoint() {
-    /* ── Estratégia 1: texto "Caixa de Entrada" / "Inbox" ── */
-    var allEls = document.querySelectorAll('span, p, a, div, li, button');
-    var knownTexts = [
-      'Caixa de Entrada', 'Inbox',
+    /*
+     * Objetivo: inserir o grupo CRM como PRIMEIRO filho do container de
+     * navegação de NÍVEL SUPERIOR (mesmo nível de "Conversas", "Contatos",
+     * "Relatórios") — nunca dentro de um sub-menu.
+     *
+     * Estratégia:
+     * 1. Busca labels de NÍVEL SUPERIOR (não sub-itens como "Caixa de Entrada")
+     * 2. Sobe até encontrar o container coluna com ≥3 filhos
+     * 3. Retorna { container, before: container.firstChild }  ← sempre no topo
+     */
+    var allEls = document.querySelectorAll('span, a, button, li, div');
+
+    /* Apenas labels de itens de NÍVEL SUPERIOR do nav */
+    var topTexts = [
       'Conversas', 'Conversations',
       'Contatos',  'Contacts',
-      'Relatórios','Reports'
+      'Relatórios','Reports',
+      'Ajuda',     'Help',
+      'Configurações', 'Settings'
     ];
 
-    for (var t = 0; t < knownTexts.length; t++) {
+    for (var t = 0; t < topTexts.length; t++) {
       for (var e = 0; e < allEls.length; e++) {
         var el = allEls[e];
-        /* Elemento de texto puro — sem filhos ou com ícone SVG apenas */
         var hasOnlySvg = el.children.length === 1 &&
                          el.children[0].tagName === 'SVG';
         if (el.children.length > 0 && !hasOnlySvg) continue;
-        if (el.textContent.trim() !== knownTexts[t]) continue;
-        if (!el.offsetParent) continue; // oculto
+        if (el.textContent.trim() !== topTexts[t]) continue;
+        if (!el.offsetParent) continue;
 
-        /* Sobe até achar um container COLUNA com ≥3 filhos */
+        /* Sobe até container COLUNA com ≥3 filhos (o nav de nível superior) */
         var node = el;
-        for (var steps = 0; steps < 8; steps++) {
+        for (var steps = 0; steps < 12; steps++) {
           var parent = node.parentElement;
           if (!parent || parent === document.body) break;
           if (parent.children.length >= 3 && isColumnContainer(parent)) {
-            log('inserção via texto "' + knownTexts[t] + '" | container:',
+            log('inserção via "' + topTexts[t] + '" | container:',
                 parent.tagName, window.getComputedStyle(parent).display,
                 '| filhos:', parent.children.length);
-            return { container: parent, before: node };
+            /* Sempre insere no INÍCIO — CRM é o primeiro item */
+            return { container: parent, before: parent.firstChild };
           }
           node = parent;
         }
       }
     }
 
-    /* ── Estratégia 2: link de nível superior + verificação de coluna ── */
+    /* ── Estratégia 2: links de nível superior por href ── */
     var probes = [
       'a[href*="/contacts"]', 'a[href*="/reports"]',
       'a[href*="/campaigns"]', 'a[href*="/mentions"]'
@@ -332,12 +344,12 @@
       var link = document.querySelector(probes[i]);
       if (!link || !link.offsetParent) continue;
       var node2 = link;
-      for (var s = 0; s < 8; s++) {
+      for (var s = 0; s < 10; s++) {
         var p = node2.parentElement;
         if (!p || p === document.body) break;
-        if (p.children.length >= 4 && isColumnContainer(p)) {
+        if (p.children.length >= 3 && isColumnContainer(p)) {
           log('inserção via probe', probes[i], '| filhos:', p.children.length);
-          return { container: p, before: node2 };
+          return { container: p, before: p.firstChild };
         }
         node2 = p;
       }
@@ -347,7 +359,10 @@
     var fallbacks = ['aside nav', '.woot-sidebar nav', '.woot-sidebar', 'aside'];
     for (var j = 0; j < fallbacks.length; j++) {
       var found = document.querySelector(fallbacks[j]);
-      if (found) { log('fallback:', fallbacks[j]); return { container: found, before: found.firstChild }; }
+      if (found) {
+        log('fallback:', fallbacks[j]);
+        return { container: found, before: found.firstChild };
+      }
     }
     return null;
   }
@@ -766,7 +781,7 @@
   }, 500);
 
   function boot() {
-    log('iniciando v3.1');
+    log('iniciando v3.2');
     injectStyles();
     ensurePanel();
     injectSidebar();
