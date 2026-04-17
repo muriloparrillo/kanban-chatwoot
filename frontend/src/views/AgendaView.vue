@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { ScheduledMessagesAPI } from '../services/api';
+import { ScheduledMessagesAPI, AccountsAPI } from '../services/api';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval,
          isSameDay, isToday, addMonths, subMonths, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -55,6 +55,39 @@ function msgsForDay(day) {
   return msgsByDay.value[format(day, 'yyyy-MM-dd')] || [];
 }
 
+/* ── templates WhatsApp ── */
+const templates        = ref([]);
+const templatesLoading = ref(false);
+const selectedTemplate = ref('');
+
+const loadTemplates = async () => {
+  if (templates.value.length) return;
+  templatesLoading.value = true;
+  try {
+    const { data } = await AccountsAPI.messageTemplates();
+    templates.value = Array.isArray(data) ? data.filter(t =>
+      !t.status || t.status === 'APPROVED' || t.status === 'approved'
+    ) : [];
+  } catch {
+    templates.value = [];
+  } finally {
+    templatesLoading.value = false;
+  }
+};
+
+const onTemplateSelect = () => {
+  if (!selectedTemplate.value) return;
+  const tpl = templates.value.find(t => String(t.id || t.name) === selectedTemplate.value);
+  if (!tpl) return;
+  let body = '';
+  if (tpl.components && Array.isArray(tpl.components)) {
+    const bc = tpl.components.find(c => c.type === 'BODY');
+    body = bc?.text || '';
+  }
+  body = body || tpl.body || tpl.content || '';
+  if (body) form.value.message = body;
+};
+
 /* ── form nova mensagem ── */
 const showForm    = ref(false);
 const saving      = ref(false);
@@ -73,9 +106,11 @@ function emptyForm() {
 
 function openForm(day) {
   form.value = emptyForm();
+  selectedTemplate.value = '';
   if (day) form.value.scheduled_at = format(day, "yyyy-MM-dd'T'HH:mm");
   showForm.value = true;
   formErr.value  = '';
+  loadTemplates();
 }
 
 const submitForm = async () => {
@@ -151,13 +186,32 @@ const fmtDateTime = (d) =>
     <div v-if="showForm" class="mb-6 p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
       <h2 class="font-semibold text-slate-700 mb-4 text-sm uppercase tracking-wide">Nova mensagem agendada</h2>
       <div class="grid grid-cols-2 gap-4">
+        <!-- Dropdown templates WhatsApp -->
+        <div class="col-span-2">
+          <label class="text-xs font-medium text-slate-500 block mb-1">Modelo aprovado (WhatsApp)</label>
+          <select
+            v-model="selectedTemplate"
+            @change="onTemplateSelect"
+            class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
+            <option value="">
+              {{ templatesLoading ? 'Carregando modelos…' : templates.length ? '— Selecionar modelo —' : 'Nenhum modelo aprovado encontrado' }}
+            </option>
+            <option v-for="t in templates" :key="t.id || t.name" :value="String(t.id || t.name)">
+              {{ t.name || 'Template' }}
+            </option>
+          </select>
+          <p v-if="!templatesLoading && templates.length" class="text-xs text-slate-400 mt-1">
+            Selecione um modelo para preencher a mensagem automaticamente
+          </p>
+        </div>
+
         <div class="col-span-2">
           <label class="text-xs font-medium text-slate-500 block mb-1">Mensagem *</label>
           <textarea
             v-model="form.message"
             rows="3"
             class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 resize-none"
-            placeholder="Digite a mensagem que será enviada…"></textarea>
+            placeholder="Digite a mensagem ou selecione um modelo acima…"></textarea>
         </div>
         <div>
           <label class="text-xs font-medium text-slate-500 block mb-1">Data e hora *</label>
