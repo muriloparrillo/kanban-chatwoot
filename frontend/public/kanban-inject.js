@@ -1,6 +1,6 @@
 /**
  * Kanban/CRM Inject — item CRM nativo no sidebar + botão "+ CRM" em conversas e contatos
- * v3.0
+ * v3.1 — findContactAnchor text+position (Chatwoot v4 / Tailwind)
  */
 (function () {
   'use strict';
@@ -55,8 +55,9 @@
       'html.dark #crm-panel-bar span{color:#e5eef3}',
       'html.dark #crm-panel-close{color:#9babb4}',
       'html.dark #crm-panel-close:hover{background:#3a4a54;color:#e5eef3}',
-      /* grupo CRM sidebar — sem altura fixa, flex-shrink:0 para não expandir */
-      '#crm-sidebar-group{flex-shrink:0;width:100%;min-height:0;box-sizing:border-box}',
+      /* grupo CRM sidebar */
+      '#crm-sidebar-group{flex-shrink:0;flex-basis:100%;width:100%;min-height:0;',
+      'box-sizing:border-box;grid-column:1/-1;align-self:stretch}',
       '#crm-group-header{display:flex;align-items:center;justify-content:space-between;',
       'padding:8px 12px;border-radius:8px;cursor:pointer;color:#3d4f58;font-size:13px;',
       'font-weight:500;width:100%;background:none;border:none;',
@@ -266,38 +267,87 @@
   }
 
   /* ── Encontra o ponto exato de inserção no mesmo nível dos itens nativos ──
-   * Estratégia: acha um link nativo do Chatwoot, sobe na árvore até encontrar
-   * o container que tem ≥3 filhos diretos — esse é o "nav list" real.
-   * Inserimos ANTES do primeiro filho nativo, como irmão, não como pai.
+   *
+   * Problema anterior: inseríamos no container pai do sidebar (flex-column com
+   * justify-content:space-between), deixando o gap enorme entre CRM e os itens.
+   *
+   * Solução: buscar "Caixa de Entrada" / "Inbox" por texto, subir na árvore
+   * até encontrar um container COLUNA (flex-direction:column ou block/ul),
+   * e inserir NESSE nível — exatamente irmão dos itens nativos.
    * ─────────────────────────────────────────────────────────────────────── */
+  function isColumnContainer(el) {
+    try {
+      var cs = window.getComputedStyle(el);
+      var d  = cs.display;
+      var fd = cs.flexDirection;
+      var t  = el.tagName.toUpperCase();
+      return (d === 'flex' && fd === 'column') ||
+             d === 'block' ||
+             t === 'UL' || t === 'OL' || t === 'NAV';
+    } catch(e) { return false; }
+  }
+
   function findInsertionPoint() {
+    /* ── Estratégia 1: texto "Caixa de Entrada" / "Inbox" ── */
+    var allEls = document.querySelectorAll('span, p, a, div, li, button');
+    var knownTexts = [
+      'Caixa de Entrada', 'Inbox',
+      'Conversas', 'Conversations',
+      'Contatos',  'Contacts',
+      'Relatórios','Reports'
+    ];
+
+    for (var t = 0; t < knownTexts.length; t++) {
+      for (var e = 0; e < allEls.length; e++) {
+        var el = allEls[e];
+        /* Elemento de texto puro — sem filhos ou com ícone SVG apenas */
+        var hasOnlySvg = el.children.length === 1 &&
+                         el.children[0].tagName === 'SVG';
+        if (el.children.length > 0 && !hasOnlySvg) continue;
+        if (el.textContent.trim() !== knownTexts[t]) continue;
+        if (!el.offsetParent) continue; // oculto
+
+        /* Sobe até achar um container COLUNA com ≥3 filhos */
+        var node = el;
+        for (var steps = 0; steps < 8; steps++) {
+          var parent = node.parentElement;
+          if (!parent || parent === document.body) break;
+          if (parent.children.length >= 3 && isColumnContainer(parent)) {
+            log('inserção via texto "' + knownTexts[t] + '" | container:',
+                parent.tagName, window.getComputedStyle(parent).display,
+                '| filhos:', parent.children.length);
+            return { container: parent, before: node };
+          }
+          node = parent;
+        }
+      }
+    }
+
+    /* ── Estratégia 2: link de nível superior + verificação de coluna ── */
     var probes = [
-      'a[href*="/mentions"]', 'a[href*="/mine"]',
-      'a[href*="/unattended"]', 'a[href$="/conversations"]',
-      'a[href*="/contacts"]',  'a[href*="/reports"]',
-      'a[href*="/dashboard"]'
+      'a[href*="/contacts"]', 'a[href*="/reports"]',
+      'a[href*="/campaigns"]', 'a[href*="/mentions"]'
     ];
     for (var i = 0; i < probes.length; i++) {
       var link = document.querySelector(probes[i]);
-      if (!link || !link.offsetParent) continue; // ignorar elementos ocultos
-      // Sobe até encontrar o container direto com múltiplos filhos
-      var el = link;
-      while (el && el !== document.body) {
-        var parent = el.parentElement;
-        if (!parent) break;
-        if (parent.children.length >= 3) {
-          log('ponto de inserção via probe:', probes[i],
-              '| container:', parent.tagName, parent.className.substring(0, 60));
-          return { container: parent, before: el };
+      if (!link || !link.offsetParent) continue;
+      var node2 = link;
+      for (var s = 0; s < 8; s++) {
+        var p = node2.parentElement;
+        if (!p || p === document.body) break;
+        if (p.children.length >= 4 && isColumnContainer(p)) {
+          log('inserção via probe', probes[i], '| filhos:', p.children.length);
+          return { container: p, before: node2 };
         }
-        el = parent;
+        node2 = p;
       }
     }
-    // Fallback: qualquer nav/aside
+
+    /* ── Fallback genérico ── */
     var fallbacks = ['aside nav', '.woot-sidebar nav', '.woot-sidebar', 'aside'];
     for (var j = 0; j < fallbacks.length; j++) {
       var found = document.querySelector(fallbacks[j]);
-      if (found) return { container: found, before: found.firstChild };
+      if (found) { log('fallback:', fallbacks[j]); return { container: found, before: found.firstChild }; }
     }
     return null;
   }
@@ -397,37 +447,118 @@
   }
 
   /* ── Encontrar onde ancorar o botão ──────────────────────────────────── */
+  /*
+   * Estratégia text-first + posição:
+   * 1. Texto de seção conhecido → sobe até container com ≥2 filhos
+   * 2. Para conversa: aside/div na metade direita da tela
+   * 3. Para contato: h1 → parentElement
+   * 4. Fallback: seletores CSS legados (Chatwoot v2/v3)
+   */
   function findContactAnchor(type) {
-    var selectors;
+    var allEls = document.querySelectorAll('h4, h5, span, p, div, label');
+
     if (type === 'conversation') {
-      selectors = [
-        /* painel lateral direito da conversa */
-        '.contact-conversation-details',
-        '.conversation-contact-details',
-        '.contact-details-wrap',
-        '.contact-card',
-        '.contact-overview',
-        /* fallback: qualquer seção de contato no aside direito */
-        '.conversation-details',
-        '[class*="contact-details"]',
-        '[class*="contact-info"]'
+      /* Textos de seção típicos do painel direito da conversa */
+      var convTexts = [
+        'Ações da conversa',    'Conversation Actions',
+        'Participantes',        'Participants',
+        'Informações de contato','Contact Information',
+        'Etiquetas',            'Labels',
+        'Equipe',               'Team'
       ];
+      for (var t = 0; t < convTexts.length; t++) {
+        for (var e = 0; e < allEls.length; e++) {
+          var el = allEls[e];
+          if (el.children.length > 1) continue;
+          if (el.textContent.trim() !== convTexts[t]) continue;
+          if (!el.offsetParent) continue;
+          /* Sobe buscando um container do lado direito */
+          var node = el;
+          for (var s = 0; s < 8; s++) {
+            var par = node.parentElement;
+            if (!par || par === document.body) break;
+            var rect = par.getBoundingClientRect();
+            if (rect.left > window.innerWidth * 0.45 && par.children.length >= 2) {
+              log('anchor conversa via texto "' + convTexts[t] + '"');
+              return par;
+            }
+            node = par;
+          }
+        }
+      }
+
+      /* Fallback 1: aside / painel direito por posição */
+      var panels = document.querySelectorAll('aside, section, [role="complementary"]');
+      for (var i = 0; i < panels.length; i++) {
+        var p = panels[i];
+        if (!p.offsetParent) continue;
+        var r = p.getBoundingClientRect();
+        if (r.left > window.innerWidth * 0.45 && r.width > 180) {
+          log('anchor conversa via painel direito posição');
+          return p;
+        }
+      }
+
+      /* Fallback 2: seletores CSS legados */
+      var legacyConv = [
+        '.contact-conversation-details', '.conversation-contact-details',
+        '.contact-details-wrap', '.contact-card', '.conversation-details',
+        '[class*="contact-details"]', '[class*="contact-info"]'
+      ];
+      for (var j = 0; j < legacyConv.length; j++) {
+        var found = document.querySelector(legacyConv[j]);
+        if (found && found.offsetParent) { log('anchor conversa legado', legacyConv[j]); return found; }
+      }
+
     } else {
-      selectors = [
-        /* cabeçalho da página de contato */
-        '.contact-info',
-        '.contact-details',
-        '[class*="contact-page"]',
-        '[class*="contact-header"]',
-        /* fallback genérico */
-        'h1',
-        '.page-title'
+      /* ── Página de contato ── */
+      /* 1. Textos de seção conhecidos */
+      var contactTexts = [
+        'Conversas anteriores', 'Previous Conversations',
+        'Notas', 'Notes',
+        'Informações', 'Information',
+        'Atividade recente', 'Recent Activity'
       ];
+      for (var t2 = 0; t2 < contactTexts.length; t2++) {
+        for (var e2 = 0; e2 < allEls.length; e2++) {
+          var el2 = allEls[e2];
+          if (el2.children.length > 1) continue;
+          if (el2.textContent.trim() !== contactTexts[t2]) continue;
+          if (!el2.offsetParent) continue;
+          var node2 = el2;
+          for (var s2 = 0; s2 < 7; s2++) {
+            var par2 = node2.parentElement;
+            if (!par2 || par2 === document.body) break;
+            if (par2.children.length >= 2) { log('anchor contato via texto "' + contactTexts[t2] + '"'); return par2; }
+            node2 = par2;
+          }
+        }
+      }
+
+      /* 2. h1 (nome do contato) → container pai */
+      var h1 = document.querySelector('h1');
+      if (h1 && h1.offsetParent) {
+        var node3 = h1;
+        for (var s3 = 0; s3 < 5; s3++) {
+          var par3 = node3.parentElement;
+          if (!par3 || par3 === document.body) break;
+          if (par3.children.length >= 2) { log('anchor contato via h1'); return par3; }
+          node3 = par3;
+        }
+        return h1.parentElement;
+      }
+
+      /* 3. Seletores CSS legados */
+      var legacyCt = [
+        '.contact-info', '.contact-details',
+        '[class*="contact-page"]', '[class*="contact-header"]', '.page-title'
+      ];
+      for (var k = 0; k < legacyCt.length; k++) {
+        var el3 = document.querySelector(legacyCt[k]);
+        if (el3 && el3.offsetParent) { log('anchor contato legado', legacyCt[k]); return el3; }
+      }
     }
-    for (var i = 0; i < selectors.length; i++) {
-      var el = document.querySelector(selectors[i]);
-      if (el) return el;
-    }
+
     return null;
   }
 
@@ -635,7 +766,7 @@
   }, 500);
 
   function boot() {
-    log('iniciando v3.0');
+    log('iniciando v3.1');
     injectStyles();
     ensurePanel();
     injectSidebar();
