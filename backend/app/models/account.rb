@@ -32,6 +32,9 @@ class Account < ApplicationRecord
   end
 
   def create_default_funnel
-    funnels.create!(name: 'Funil Principal', is_default: true) if funnels.empty?
+    # Usa create (sem bang) para não propagar exceção no pipeline de request
+    funnels.create(name: 'Funil Principal', is_default: true) if funnels.empty?
+  rescue => e
+    Rails.logger.warn "[CRM] create_default_funnel falhou para account #{id}: #{e.message}"
   end
 end

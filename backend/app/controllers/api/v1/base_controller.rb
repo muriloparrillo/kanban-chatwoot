@@ -38,11 +38,19 @@ module Api
           unless @current_account
             template = Account.find_by(account_token: token)
             if template
-              @current_account = Account.find_or_create_by!(chatwoot_account_id: cw_id) do |a|
-                a.account_token              = token
-                a.name                       = "Conta #{cw_id}"
-                a.chatwoot_base_url          = template.chatwoot_base_url
-                a.chatwoot_api_access_token  = template.chatwoot_api_access_token
+              begin
+                @current_account = Account.find_or_create_by!(chatwoot_account_id: cw_id) do |a|
+                  a.account_token             = token
+                  a.name                      = "Conta #{cw_id}"
+                  a.chatwoot_base_url         = template.chatwoot_base_url
+                  a.chatwoot_api_access_token = template.chatwoot_api_access_token
+                end
+              rescue => e
+                # Auto-provisioning falhou (validação, race condition, ou callback).
+                # Loga e usa a conta-template como fallback para não quebrar o request.
+                Rails.logger.error "[CRM] auto-provision falhou cw_id=#{cw_id}: #{e.message}"
+                @current_account = Account.find_by(account_token: token, chatwoot_account_id: cw_id)
+                @current_account ||= template
               end
             end
           end

@@ -41,6 +41,8 @@ class Funnel < ApplicationRecord
       { name: 'Ganho',       color: '#10b981', stage_type: 'won',  position: 4 },
       { name: 'Perdido',     color: '#6b7280', stage_type: 'lost', position: 5 }
     ]
-    default.each { |attrs| stages.create!(attrs) }
+    default.each { |attrs| stages.create(attrs) }
+  rescue => e
+    Rails.logger.warn "[CRM] create_default_stages falhou para funnel #{id}: #{e.message}"
   end
 end
