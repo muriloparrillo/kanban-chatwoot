@@ -163,3 +163,11 @@ export const ScheduledMessagesAPI = {
   destroy:    (id) => api.delete(`/api/v1/scheduled_messages/${id}`),
   processDue: () => api.post('/api/v1/scheduled_messages/process_due')
 };
+
+export const TasksAPI = {
+  list:    (params) => api.get('/api/v1/tasks', { params }),
+  get:     (id) => api.get(`/api/v1/tasks/${id}`),
+  create:  (payload) => api.post('/api/v1/tasks', { task: payload }),
+  update:  (id, payload) => api.patch(`/api/v1/tasks/${id}`, { task: payload }),
+  destroy: (id) => api.delete(`/api/v1/tasks/${id}`)
+};

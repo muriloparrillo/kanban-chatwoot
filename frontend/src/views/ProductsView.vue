@@ -102,6 +102,7 @@ function fmtValue(val, currency) {
 </script>
 
 <template>
+  <div class="h-full overflow-y-auto">
   <div class="max-w-3xl mx-auto p-6">
 
     <!-- Header -->
@@ -266,5 +267,6 @@ function fmtValue(val, currency) {
       <div class="text-sm">Clique em "Novo produto" para começar</div>
     </div>
 
+  </div>
   </div>
 </template>

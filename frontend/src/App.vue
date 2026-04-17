@@ -21,26 +21,56 @@ const isEmbedded = computed(() => new URLSearchParams(window.location.search).ha
             active-class="bg-brand/10 text-brand font-medium">
             Kanban
           </RouterLink>
+          <RouterLink to="/agenda"
+            class="px-3 py-1.5 rounded-md text-sm hover:bg-slate-100"
+            active-class="bg-brand/10 text-brand font-medium">
+            Agenda
+          </RouterLink>
+          <RouterLink to="/tasks"
+            class="px-3 py-1.5 rounded-md text-sm hover:bg-slate-100"
+            active-class="bg-brand/10 text-brand font-medium">
+            Tarefas
+          </RouterLink>
           <RouterLink to="/settings/funnels"
             class="px-3 py-1.5 rounded-md text-sm hover:bg-slate-100"
             active-class="bg-brand/10 text-brand font-medium">
-            Configurar Funis
+            Funis
+          </RouterLink>
+          <RouterLink to="/settings/products"
+            class="px-3 py-1.5 rounded-md text-sm hover:bg-slate-100"
+            active-class="bg-brand/10 text-brand font-medium">
+            Produtos
           </RouterLink>
         </nav>
       </div>
     </header>
 
     <!-- Header compacto quando embutido no Chatwoot -->
-    <header v-if="!isSetup && isEmbedded" class="flex items-center gap-2 px-3 py-1.5 bg-white border-b border-slate-200">
+    <header v-if="!isSetup && isEmbedded" class="flex items-center gap-2 px-3 py-1.5 bg-white border-b border-slate-200 flex-wrap">
       <RouterLink to="/board"
         class="px-2 py-1 rounded text-xs hover:bg-slate-100"
         active-class="bg-brand/10 text-brand font-medium">
         Kanban
       </RouterLink>
+      <RouterLink to="/agenda"
+        class="px-2 py-1 rounded text-xs hover:bg-slate-100"
+        active-class="bg-brand/10 text-brand font-medium">
+        Agenda
+      </RouterLink>
+      <RouterLink to="/tasks"
+        class="px-2 py-1 rounded text-xs hover:bg-slate-100"
+        active-class="bg-brand/10 text-brand font-medium">
+        Tarefas
+      </RouterLink>
       <RouterLink to="/settings/funnels"
         class="px-2 py-1 rounded text-xs hover:bg-slate-100"
         active-class="bg-brand/10 text-brand font-medium">
         Funis
+      </RouterLink>
+      <RouterLink to="/settings/products"
+        class="px-2 py-1 rounded text-xs hover:bg-slate-100"
+        active-class="bg-brand/10 text-brand font-medium">
+        Produtos
       </RouterLink>
     </header>
 

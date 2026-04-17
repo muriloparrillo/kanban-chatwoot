@@ -7,7 +7,7 @@ module KanbanChatwoot
   class Application < Rails::Application
     config.load_defaults 7.1
     config.api_only = true
-    config.time_zone = 'UTC'
+    config.time_zone = 'Brasilia'
     config.active_job.queue_adapter = :sidekiq
 
     config.autoload_paths += %W[#{config.root}/app/services]

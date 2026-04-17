@@ -4,6 +4,7 @@ class Account < ApplicationRecord
   has_many :tags,               dependent: :destroy
   has_many :products,           dependent: :destroy
   has_many :scheduled_messages, dependent: :destroy
+  has_many :tasks,              dependent: :destroy
 
   validates :chatwoot_account_id, :name, :chatwoot_base_url, :chatwoot_api_access_token, presence: true
   validates :chatwoot_account_id, uniqueness: true

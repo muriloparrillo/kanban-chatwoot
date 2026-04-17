@@ -126,6 +126,7 @@ const fmtDateTime = (d) =>
 </script>
 
 <template>
+  <div class="h-full overflow-y-auto">
   <div class="max-w-5xl mx-auto p-6">
 
     <!-- Header -->
@@ -301,5 +302,6 @@ const fmtDateTime = (d) =>
       </table>
     </div>
 
+  </div>
   </div>
 </template>

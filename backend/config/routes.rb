@@ -65,6 +65,9 @@ Rails.application.routes.draw do
         end
       end
 
+      # Tasks (tarefas e pendências por lead/account)
+      resources :tasks, only: %i[index show create update destroy]
+
       # Agents (mirrored from Chatwoot)
       resources :agents, only: %i[index]
     end

@@ -5,6 +5,7 @@ import AccountSetup from '../views/AccountSetup.vue';
 import LeadDetail from '../views/LeadDetail.vue';
 import ProductsView from '../views/ProductsView.vue';
 import AgendaView from '../views/AgendaView.vue';
+import TasksView from '../views/TasksView.vue';
 
 const routes = [
   { path: '/', redirect: '/board' },
@@ -14,6 +15,7 @@ const routes = [
   { path: '/settings/funnels', name: 'funnel-settings', component: FunnelSettings },
   { path: '/settings/products', name: 'products-settings', component: ProductsView },
   { path: '/agenda', name: 'agenda', component: AgendaView },
+  { path: '/tasks', name: 'tasks', component: TasksView },
   { path: '/leads/:id', name: 'lead-detail', component: LeadDetail, props: true }
 ];
 
