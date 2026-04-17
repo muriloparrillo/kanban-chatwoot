@@ -538,9 +538,9 @@
   /* Cache dos funis para uso nas ações de nav */
   var funnelListCache = [];
 
-  function openPanelWithView(viewMode, sourceEl) {
-    /* Determina o funil padrão */
-    var funnelId = funnelListCache.length ? funnelListCache[0].id : null;
+  function openPanelWithView(viewMode, sourceEl, explicitFunnelId) {
+    /* Determina o funil: usa o explícito se passado, senão o primeiro do cache */
+    var funnelId = explicitFunnelId || (funnelListCache.length ? funnelListCache[0].id : null);
 
     /* Calcula largura do sidebar a partir do elemento clicado — mais confiável */
     var w = sourceEl ? getSidebarWidthFromEl(sourceEl) : getSidebarWidth();
@@ -1077,9 +1077,15 @@
 
       /* Mostra lead existente (se houver) */
       if (existingLead) {
+        var funnelId = existingLead.funnel_id;
         html +=
           '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:12px">' +
-            '<div style="font-size:11px;color:#1d4ed8;font-weight:600;margin-bottom:2px">JÁ ASSOCIADO</div>' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">' +
+              '<div style="font-size:11px;color:#1d4ed8;font-weight:600">JÁ ASSOCIADO</div>' +
+              (funnelId
+                ? '<button id="crm-go-board-btn" style="font-size:11px;color:#1f93ff;background:none;border:1px solid #bfdbfe;border-radius:6px;padding:2px 8px;cursor:pointer">Ver no Kanban</button>'
+                : '') +
+            '</div>' +
             '<div style="font-size:13px;color:#1e3a5f;font-weight:500">' + (existingLead.title || 'Lead') + '</div>' +
             '<div style="font-size:11px;color:#3b82f6;margin-top:2px">Etapa: ' + (existingLead.stage_name || '—') + '</div>' +
           '</div>' +
@@ -1089,6 +1095,17 @@
       }
 
       container.innerHTML = html + '<div id="crm-funnel-list-inner"><div style="color:#9babb4;font-size:13px;padding:8px">Carregando...</div></div>';
+
+      /* Liga botão "Ver no Kanban" ao painel */
+      if (existingLead && existingLead.funnel_id) {
+        var goBtn = document.getElementById('crm-go-board-btn');
+        if (goBtn) {
+          goBtn.addEventListener('click', function() {
+            closeModal();
+            openPanelWithView('funnels', null, existingLead.funnel_id);
+          });
+        }
+      }
 
       fetchFunnels(function(funnels) {
         var inner = document.getElementById('crm-funnel-list-inner');

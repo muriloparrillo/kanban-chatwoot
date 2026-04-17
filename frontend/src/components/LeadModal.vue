@@ -290,37 +290,32 @@ const billingLabel = (t) => t === 'recurring' ? 'Recorrente' : 'Único';
         <!-- Painel esquerdo -->
         <div class="w-68 border-r border-slate-200 p-4 space-y-4 text-sm overflow-y-auto flex-shrink-0" style="width:17rem">
 
-          <!-- Valor -->
+          <!-- Dados do contato -->
           <div>
-            <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Valor da oportunidade</label>
-            <div class="flex items-center gap-1">
-              <span class="text-slate-400 text-xs">R$</span>
+            <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-2">Contato</label>
+            <div class="space-y-2">
               <input
-                v-model.number="detail.value"
-                type="number"
-                min="0"
-                step="0.01"
-                class="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
-                placeholder="0,00" />
+                :value="detail.contact?.name"
+                @input="ensureContact(); detail.contact.name = $event.target.value"
+                class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
+                placeholder="Nome" />
+              <input
+                :value="detail.contact?.email"
+                @input="ensureContact(); detail.contact.email = $event.target.value"
+                type="email"
+                class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
+                placeholder="E-mail" />
+              <input
+                :value="detail.contact?.phone"
+                @input="ensureContact(); detail.contact.phone = $event.target.value"
+                type="tel"
+                class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
+                placeholder="Telefone" />
             </div>
           </div>
 
-          <!-- Prioridade -->
-          <div>
-            <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Prioridade</label>
-            <select
-              v-model.number="detail.priority"
-              class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
-              <option :value="0">Sem prioridade</option>
-              <option :value="1">Baixa</option>
-              <option :value="2">Média</option>
-              <option :value="3">Alta</option>
-              <option :value="4">Urgente</option>
-            </select>
-          </div>
-
           <!-- Produtos / Serviços (múltiplos) -->
-          <div>
+          <div class="pt-2 border-t border-slate-100">
             <div class="flex items-center justify-between mb-1.5">
               <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Produtos / Serviços</label>
               <RouterLink to="/settings/products" class="text-xs text-brand hover:underline">+ Gerenciar</RouterLink>
@@ -345,23 +340,45 @@ const billingLabel = (t) => t === 'recurring' ? 'Recorrente' : 'Único';
               </div>
             </div>
 
-            <!-- Adicionar produto -->
-            <div class="flex gap-1.5">
-              <select
-                v-model="newProductId"
-                class="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand/30">
-                <option value="">Adicionar produto…</option>
-                <option v-for="p in availableProducts" :key="p.id" :value="p.id">
-                  {{ p.name }}{{ p.value != null ? ' — ' + fmtCurrency(p.value, p.currency) : '' }}{{ p.billing_type === 'recurring' ? ' ↻' : '' }}
-                </option>
-              </select>
-              <button
-                @click="addProduct"
-                :disabled="!newProductId"
-                class="px-2 py-1.5 bg-brand text-white rounded-lg text-xs disabled:opacity-40">
-                +
-              </button>
+            <!-- Selecionar produto → adiciona automaticamente -->
+            <select
+              v-model="newProductId"
+              @change="addProduct"
+              class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand/30">
+              <option value="">Adicionar produto…</option>
+              <option v-for="p in availableProducts" :key="p.id" :value="p.id">
+                {{ p.name }}{{ p.value != null ? ' — ' + fmtCurrency(p.value, p.currency) : '' }}{{ p.billing_type === 'recurring' ? ' ↻' : '' }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Valor -->
+          <div class="pt-2 border-t border-slate-100">
+            <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Valor da oportunidade</label>
+            <div class="flex items-center gap-1">
+              <span class="text-slate-400 text-xs">R$</span>
+              <input
+                v-model.number="detail.value"
+                type="number"
+                min="0"
+                step="0.01"
+                class="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
+                placeholder="0,00" />
             </div>
+          </div>
+
+          <!-- Prioridade -->
+          <div class="pt-2 border-t border-slate-100">
+            <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Prioridade</label>
+            <select
+              v-model.number="detail.priority"
+              class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
+              <option :value="0">Sem prioridade</option>
+              <option :value="1">Baixa</option>
+              <option :value="2">Média</option>
+              <option :value="3">Alta</option>
+              <option :value="4">Urgente</option>
+            </select>
           </div>
 
           <!-- Mover para funil/etapa -->
@@ -396,36 +413,6 @@ const billingLabel = (t) => t === 'recurring' ? 'Recorrente' : 'Único';
               rows="3"
               class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 resize-none"
               placeholder="Notas rápidas sobre o lead…"></textarea>
-          </div>
-
-          <!-- Dados do contato -->
-          <div class="pt-2 border-t border-slate-100">
-            <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-2">Contato</label>
-            <div class="space-y-2">
-              <input
-                :value="detail.contact?.name"
-                @input="ensureContact(); detail.contact.name = $event.target.value"
-                class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
-                placeholder="Nome" />
-              <input
-                :value="detail.contact?.email"
-                @input="ensureContact(); detail.contact.email = $event.target.value"
-                type="email"
-                class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
-                placeholder="E-mail" />
-              <input
-                :value="detail.contact?.phone"
-                @input="ensureContact(); detail.contact.phone = $event.target.value"
-                type="tel"
-                class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
-                placeholder="Telefone" />
-            </div>
-          </div>
-
-          <!-- Responsável -->
-          <div class="pt-2 border-t border-slate-100">
-            <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Responsável</label>
-            <div class="text-slate-600 text-sm">{{ detail.assignee?.name || '—' }}</div>
           </div>
         </div>
 
