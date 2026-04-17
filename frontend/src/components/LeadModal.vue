@@ -248,7 +248,9 @@ const submitTask = async () => {
     taskFormOpen.value = false;
     await loadTasks();
   } catch (e) {
-    taskFormErr.value = e?.response?.data?.errors?.join(', ') || 'Erro ao salvar.';
+    const status = e?.response?.status;
+    const errs   = e?.response?.data?.errors?.join(', ');
+    taskFormErr.value = errs || (status ? `Erro ${status} ao salvar.` : 'Sem resposta do servidor.');
   } finally { taskSaving.value = false; }
 };
 
