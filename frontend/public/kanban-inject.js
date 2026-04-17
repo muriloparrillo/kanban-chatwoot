@@ -55,31 +55,33 @@
       'html.dark #crm-panel-bar span{color:#e5eef3}',
       'html.dark #crm-panel-close{color:#9babb4}',
       'html.dark #crm-panel-close:hover{background:#3a4a54;color:#e5eef3}',
-      /* grupo CRM sidebar */
-      '#crm-sidebar-group{list-style:none;margin:4px 0;padding:0 8px}',
+      /* grupo CRM sidebar — sem altura fixa, flex-shrink:0 para não expandir */
+      '#crm-sidebar-group{flex-shrink:0;width:100%;min-height:0;box-sizing:border-box}',
       '#crm-group-header{display:flex;align-items:center;justify-content:space-between;',
-      'padding:6px 8px;border-radius:8px;cursor:pointer;color:#3d4f58;font-size:12px;',
-      'font-weight:600;letter-spacing:.04em;text-transform:uppercase;width:100%;',
-      'background:none;border:none;transition:background .15s,color .15s}',
+      'padding:8px 12px;border-radius:8px;cursor:pointer;color:#3d4f58;font-size:13px;',
+      'font-weight:500;width:100%;background:none;border:none;',
+      'transition:background .15s,color .15s;box-sizing:border-box;text-align:left}',
       '#crm-group-header:hover{background:rgba(31,147,255,.06);color:#1f93ff}',
       '#crm-group-header.crm-active{color:#1f93ff}',
       'html.dark #crm-group-header{color:#9babb4}',
       'html.dark #crm-group-header:hover{background:rgba(31,147,255,.1);color:#1f93ff}',
-      '#crm-header-left{display:flex;align-items:center;gap:6px}',
-      '#crm-chevron{transition:transform .2s;flex-shrink:0}',
+      '#crm-header-left{display:flex;align-items:center;gap:8px;min-width:0}',
+      '#crm-chevron{transition:transform .2s;flex-shrink:0;opacity:.6}',
       '#crm-chevron.open{transform:rotate(90deg)}',
-      '#crm-funnel-list{list-style:none;margin:0;padding:0;display:none;flex-direction:column;gap:1px}',
+      '#crm-funnel-list{list-style:none;margin:0;padding:0 0 2px 0;',
+      'display:none;flex-direction:column;gap:0}',
       '#crm-funnel-list.open{display:flex}',
-      '.crm-funnel-item{display:flex;align-items:center;padding:5px 8px 5px 28px;border-radius:6px;',
-      'font-size:13px;color:#3d4f58;cursor:pointer;background:none;border:none;width:100%;',
-      'text-align:left;transition:background .12s,color .12s}',
+      '.crm-funnel-item{display:flex;align-items:center;padding:6px 12px 6px 32px;',
+      'border-radius:6px;font-size:13px;color:#3d4f58;cursor:pointer;background:none;',
+      'border:none;width:100%;text-align:left;transition:background .12s,color .12s;',
+      'box-sizing:border-box;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       '.crm-funnel-item:hover{background:rgba(31,147,255,.07);color:#1f93ff}',
       '.crm-funnel-item.crm-active{background:rgba(31,147,255,.12);color:#1f93ff;font-weight:500}',
       'html.dark .crm-funnel-item{color:#9babb4}',
       'html.dark .crm-funnel-item:hover{background:rgba(31,147,255,.1);color:#1f93ff}',
       '.crm-funnel-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:#1f93ff;',
-      'margin-right:6px;display:inline-block}',
-      '.crm-skeleton{height:28px;border-radius:6px;background:#e4e7ed;margin:2px 0;',
+      'margin-right:8px;display:inline-block}',
+      '.crm-skeleton{height:26px;border-radius:6px;background:#e4e7ed;margin:2px 0;',
       'animation:crm-pulse 1.2s ease infinite}',
       'html.dark .crm-skeleton{background:#2e404c}',
       '@keyframes crm-pulse{0%,100%{opacity:1}50%{opacity:.4}}',
@@ -263,29 +265,39 @@
     log('funis carregados:', list.length);
   }
 
-  function findNavContainer() {
-    var selectors = [
-      'aside nav', '.woot-sidebar nav',
-      'aside .menu.vertical', '.woot-sidebar .menu.vertical',
-      '.primary-nav', '.sidebar-nav',
-      '.navigation-container nav', '.navigation-container ul',
-      '.woot-sidebar', 'aside'
+  /* ── Encontra o ponto exato de inserção no mesmo nível dos itens nativos ──
+   * Estratégia: acha um link nativo do Chatwoot, sobe na árvore até encontrar
+   * o container que tem ≥3 filhos diretos — esse é o "nav list" real.
+   * Inserimos ANTES do primeiro filho nativo, como irmão, não como pai.
+   * ─────────────────────────────────────────────────────────────────────── */
+  function findInsertionPoint() {
+    var probes = [
+      'a[href*="/mentions"]', 'a[href*="/mine"]',
+      'a[href*="/unattended"]', 'a[href$="/conversations"]',
+      'a[href*="/contacts"]',  'a[href*="/reports"]',
+      'a[href*="/dashboard"]'
     ];
-    for (var i = 0; i < selectors.length; i++) {
-      var el = document.querySelector(selectors[i]);
-      if (el) { log('nav via:', selectors[i]); return el; }
-    }
-    var convLink =
-      document.querySelector('a[href*="/conversations"]') ||
-      document.querySelector('a[href*="/dashboard"]');
-    if (convLink) {
-      var node = convLink;
-      while (node && node !== document.body) {
-        var tag = (node.tagName || '').toUpperCase();
-        if (tag === 'ASIDE' || tag === 'NAV' || tag === 'UL') return node;
-        node = node.parentElement;
+    for (var i = 0; i < probes.length; i++) {
+      var link = document.querySelector(probes[i]);
+      if (!link || !link.offsetParent) continue; // ignorar elementos ocultos
+      // Sobe até encontrar o container direto com múltiplos filhos
+      var el = link;
+      while (el && el !== document.body) {
+        var parent = el.parentElement;
+        if (!parent) break;
+        if (parent.children.length >= 3) {
+          log('ponto de inserção via probe:', probes[i],
+              '| container:', parent.tagName, parent.className.substring(0, 60));
+          return { container: parent, before: el };
+        }
+        el = parent;
       }
-      return convLink.parentElement;
+    }
+    // Fallback: qualquer nav/aside
+    var fallbacks = ['aside nav', '.woot-sidebar nav', '.woot-sidebar', 'aside'];
+    for (var j = 0; j < fallbacks.length; j++) {
+      var found = document.querySelector(fallbacks[j]);
+      if (found) return { container: found, before: found.firstChild };
     }
     return null;
   }
@@ -294,8 +306,13 @@
     if (document.getElementById('crm-sidebar-group')) return;
     injectStyles();
     ensurePanel();
-    var container = findNavContainer();
-    if (!container) return;
+    var point = findInsertionPoint();
+    if (!point) {
+      log('ponto de inserção não encontrado ainda');
+      return;
+    }
+    var container = point.container;
+    var before    = point.before;
 
     var group = document.createElement('div');
     group.id = 'crm-sidebar-group';
@@ -309,7 +326,7 @@
         '<li class="crm-skeleton" style="width:75%"></li>' +
       '</ul>';
 
-    if (container.firstChild) container.insertBefore(group, container.firstChild);
+    if (before) container.insertBefore(group, before);
     else container.appendChild(group);
 
     var header = document.getElementById('crm-group-header');
@@ -606,7 +623,7 @@
    * ═══════════════════════════════════════════════════════════════════════ */
   /* Re-injeção sidebar após SPA navigation */
   new MutationObserver(function() {
-    if (!document.getElementById('crm-sidebar-group') && findNavContainer()) injectSidebar();
+    if (!document.getElementById('crm-sidebar-group') && findInsertionPoint()) injectSidebar();
   }).observe(document.documentElement, { childList: true, subtree: true });
 
   /* Retry periódico para o sidebar */
