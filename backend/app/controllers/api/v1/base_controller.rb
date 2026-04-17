@@ -1,11 +1,16 @@
 module Api
   module V1
-    # Shared auth: every API call must identify a Kanban Account, either via
-    #   - X-Account-Token header (opaque token, used by the Dashboard App iframe)
-    #   - or ?account_token=... query parameter
+    # Shared auth: every API call must identify a Kanban Account.
     #
-    # The Dashboard App (iframe) gets the token embedded on the URL when the
-    # Chatwoot admin registers the dashboard app for the account.
+    # Isolamento multi-tenant:
+    #   Um único account_token (hardcoded no inject.js) representa a instalação
+    #   inteira do Chatwoot. Cada conta Chatwoot (chatwoot_account_id) recebe
+    #   seu próprio Account isolado no banco — auto-provisionado na 1ª requisição.
+    #
+    # Lookup order:
+    #   1. token + cw_account_id  → conta isolada (caso normal)
+    #   2. auto-provisiona nova conta copiando credenciais da conta-template
+    #   3. token apenas           → fallback (conta única / sem header)
     class BaseController < ApplicationController
       before_action :authenticate_account!
 
@@ -14,25 +19,37 @@ module Api
       private
 
       def authenticate_account!
-        token  = request.headers['X-Account-Token'].presence || params[:account_token].presence
-        cw_id  = request.headers['X-Chatwoot-Account-Id'].presence ||
-                 params[:cw_account_id].presence
+        token = request.headers['X-Account-Token'].presence || params[:account_token].presence
+        cw_id = request.headers['X-Chatwoot-Account-Id'].presence ||
+                params[:cw_account_id].presence
 
-        if token.present?
-          if cw_id.present?
-            # Isola por conta Chatwoot: o mesmo token pode existir para múltiplas
-            # contas no mesmo Chatwoot. Usamos cw_account_id para selecionar a certa.
-            @current_account = Account.find_by(
-              account_token:       token,
-              chatwoot_account_id: cw_id
-            )
-            # Fallback: se não achou pela combinação, tenta só pelo token
-            # (suporte a instâncias com conta única)
-            @current_account ||= Account.find_by(account_token: token)
-          else
-            @current_account = Account.find_by(account_token: token)
+        unless token.present?
+          return render json: { error: 'unauthorized', message: 'Missing account token' },
+                        status: :unauthorized
+        end
+
+        if cw_id.present?
+          # Tenta achar conta isolada para este Chatwoot account
+          @current_account = Account.find_by(account_token: token,
+                                             chatwoot_account_id: cw_id)
+
+          # Não encontrou → auto-provisiona conta isolada copiando credenciais
+          # da conta-template (a que foi cadastrada com este token)
+          unless @current_account
+            template = Account.find_by(account_token: token)
+            if template
+              @current_account = Account.find_or_create_by!(chatwoot_account_id: cw_id) do |a|
+                a.account_token              = token
+                a.name                       = "Conta #{cw_id}"
+                a.chatwoot_base_url          = template.chatwoot_base_url
+                a.chatwoot_api_access_token  = template.chatwoot_api_access_token
+              end
+            end
           end
         end
+
+        # Fallback: conta única (sem header cw_account_id)
+        @current_account ||= Account.find_by(account_token: token)
 
         return if @current_account
 

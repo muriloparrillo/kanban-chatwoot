@@ -9,6 +9,7 @@ class Account < ApplicationRecord
   validates :chatwoot_account_id, uniqueness: true
 
   before_validation :ensure_tokens
+  after_create      :create_default_funnel
 
   # Build an authenticated Chatwoot API client for this account
   def chatwoot_client
@@ -28,5 +29,9 @@ class Account < ApplicationRecord
   def ensure_tokens
     self.account_token   ||= SecureRandom.hex(24)
     self.webhook_secret  ||= SecureRandom.hex(32)
+  end
+
+  def create_default_funnel
+    funnels.create!(name: 'Funil Principal', is_default: true) if funnels.empty?
   end
 end
