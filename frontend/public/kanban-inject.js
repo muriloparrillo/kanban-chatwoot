@@ -1,34 +1,39 @@
 /**
- * Kanban/CRM Inject — item CRM nativo no sidebar + botão "+ CRM" em conversas e contatos
- * v3.2 — CRM primeiro no nav de nível superior (não sub-item de Conversas)
+ * Kanban/CRM Inject v4.0
+ * - Sidebar: CRM primeiro no nav de nível superior
+ * - Painel: left = largura real do sidebar (não cobre o nav)
+ * - Funções Extras: botão no header da conversa junto ao "Resolver"
+ * - Modal: menu principal → Associar ao Funil → Funil picker → Stage picker
  */
 (function () {
   'use strict';
 
-  /* ─── CONFIGURAÇÃO ──────────────────────────────────────────────────── */
+  /* ─── CONFIG ─────────────────────────────────────────────────────────── */
   var KANBAN_URL    = 'https://vai-novofoco-kanban-chatwoot-frontend.dutk9f.easypanel.host';
   var ACCOUNT_TOKEN = '0fb0a7572850a512f7127633a15e844673bd3e6cf839fa75';
   var DEBUG         = true;
 
-  /* ─── GUARD ─────────────────────────────────────────────────────────── */
   if (window.__crmInjected) return;
   window.__crmInjected = true;
 
   /* ─── ESTADO ─────────────────────────────────────────────────────────── */
-  var menuOpen        = true;
+  var menuOpen       = true;
   var currentFunnelId = null;
-  var panelEl         = null;
-  var retryCount      = 0;
-  var MAX_RETRIES     = 60;
-  var funnelsCache    = [];   // { id, name, color }
-  var stagesCache     = {};   // { funnelId: [{id, name}] }
-  var crmPopover      = null;
+  var panelEl        = null;
+  var retryCount     = 0;
+  var MAX_RETRIES    = 80;
+  var funnelsCache   = [];
+  var stagesCache    = {};
+  var modalEl        = null;
+  var lastHeaderUrl  = '';
+  var headerBtnRetry = 0;
+  var sidebarTimer   = null;
 
   function log() {
     if (!DEBUG) return;
-    var args = Array.prototype.slice.call(arguments);
-    args.unshift('[CRM]');
-    console.log.apply(console, args);
+    var a = Array.prototype.slice.call(arguments);
+    a.unshift('[CRM]');
+    console.log.apply(console, a);
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
@@ -39,9 +44,10 @@
     var s = document.createElement('style');
     s.id = 'crm-inject-style';
     s.textContent = [
-      /* painel overlay */
-      '#crm-panel{position:fixed;top:0;left:60px;right:0;bottom:0;background:#fff;',
-      'z-index:9998;display:none;flex-direction:column;box-shadow:-3px 0 12px rgba(0,0,0,.18)}',
+      /* ── painel board: default left=292px para não cobrir o sidebar ── */
+      '#crm-panel{position:fixed;top:0;bottom:0;right:0;left:292px;background:#fff;',
+      'z-index:9000;display:none;flex-direction:column;',
+      'box-shadow:-3px 0 12px rgba(0,0,0,.18)}',
       '#crm-panel.crm-open{display:flex}',
       '#crm-panel iframe{flex:1;width:100%;border:none}',
       '#crm-panel-bar{display:flex;align-items:center;justify-content:space-between;',
@@ -53,71 +59,114 @@
       'html.dark #crm-panel{background:#1c2b33}',
       'html.dark #crm-panel-bar{background:#243641;border-color:#3a4a54}',
       'html.dark #crm-panel-bar span{color:#e5eef3}',
-      'html.dark #crm-panel-close{color:#9babb4}',
-      'html.dark #crm-panel-close:hover{background:#3a4a54;color:#e5eef3}',
-      /* grupo CRM sidebar */
-      '#crm-sidebar-group{flex-shrink:0;flex-basis:100%;width:100%;min-height:0;',
-      'box-sizing:border-box;grid-column:1/-1;align-self:stretch}',
+
+      /* ── sidebar grupo CRM ── */
+      '#crm-sidebar-group{width:100%;box-sizing:border-box;padding:0;margin:0}',
       '#crm-group-header{display:flex;align-items:center;justify-content:space-between;',
       'padding:8px 12px;border-radius:8px;cursor:pointer;color:#3d4f58;font-size:13px;',
-      'font-weight:500;width:100%;background:none;border:none;',
-      'transition:background .15s,color .15s;box-sizing:border-box;text-align:left}',
-      '#crm-group-header:hover{background:rgba(31,147,255,.06);color:#1f93ff}',
+      'font-weight:500;width:100%;background:none;border:none;box-sizing:border-box;text-align:left;',
+      'transition:background .15s,color .15s}',
+      '#crm-group-header:hover{background:rgba(31,147,255,.07);color:#1f93ff}',
       '#crm-group-header.crm-active{color:#1f93ff}',
       'html.dark #crm-group-header{color:#9babb4}',
       'html.dark #crm-group-header:hover{background:rgba(31,147,255,.1);color:#1f93ff}',
       '#crm-header-left{display:flex;align-items:center;gap:8px;min-width:0}',
-      '#crm-chevron{transition:transform .2s;flex-shrink:0;opacity:.6}',
+      '#crm-chevron{transition:transform .2s;flex-shrink:0;opacity:.55}',
       '#crm-chevron.open{transform:rotate(90deg)}',
-      '#crm-funnel-list{list-style:none;margin:0;padding:0 0 2px 0;',
-      'display:none;flex-direction:column;gap:0}',
+      '#crm-funnel-list{list-style:none;margin:0;padding:0 0 4px 0;display:none;flex-direction:column}',
       '#crm-funnel-list.open{display:flex}',
       '.crm-funnel-item{display:flex;align-items:center;padding:6px 12px 6px 32px;',
       'border-radius:6px;font-size:13px;color:#3d4f58;cursor:pointer;background:none;',
-      'border:none;width:100%;text-align:left;transition:background .12s,color .12s;',
-      'box-sizing:border-box;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      'border:none;width:100%;text-align:left;transition:background .12s,color .12s;box-sizing:border-box}',
       '.crm-funnel-item:hover{background:rgba(31,147,255,.07);color:#1f93ff}',
       '.crm-funnel-item.crm-active{background:rgba(31,147,255,.12);color:#1f93ff;font-weight:500}',
       'html.dark .crm-funnel-item{color:#9babb4}',
       'html.dark .crm-funnel-item:hover{background:rgba(31,147,255,.1);color:#1f93ff}',
-      '.crm-funnel-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:#1f93ff;',
-      'margin-right:8px;display:inline-block}',
-      '.crm-skeleton{height:26px;border-radius:6px;background:#e4e7ed;margin:2px 0;',
-      'animation:crm-pulse 1.2s ease infinite}',
+      '.crm-funnel-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;',
+      'background:#1f93ff;margin-right:8px;display:inline-block}',
+      '.crm-skeleton{height:24px;border-radius:6px;background:#e4e7ed;',
+      'margin:2px 8px;animation:crm-pulse 1.2s ease infinite}',
       'html.dark .crm-skeleton{background:#2e404c}',
       '@keyframes crm-pulse{0%,100%{opacity:1}50%{opacity:.4}}',
-      /* botão + CRM inline */
-      '.crm-add-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;',
-      'border-radius:6px;border:1px solid #1f93ff;background:#fff;color:#1f93ff;',
-      'font-size:12px;font-weight:500;cursor:pointer;transition:background .12s,color .12s;',
-      'white-space:nowrap;margin:6px 0}',
-      '.crm-add-btn:hover{background:#1f93ff;color:#fff}',
-      'html.dark .crm-add-btn{background:#1c2b33;border-color:#1f93ff}',
-      'html.dark .crm-add-btn:hover{background:#1f93ff;color:#fff}',
-      /* popover */
-      '#crm-popover{position:fixed;z-index:10001;background:#fff;border:1px solid #e4e7ed;',
-      'border-radius:10px;padding:14px;box-shadow:0 6px 24px rgba(0,0,0,.14);',
-      'min-width:230px;max-width:290px}',
-      'html.dark #crm-popover{background:#243641;border-color:#3a4a54;color:#e5eef3}',
-      '#crm-popover select{width:100%;padding:5px 8px;border:1px solid #e4e7ed;',
-      'border-radius:6px;font-size:12px;background:#fff;color:#1c2b33;outline:none}',
-      'html.dark #crm-popover select{background:#1c2b33;border-color:#3a4a54;color:#e5eef3}',
-      '#crm-popover label{font-size:11px;color:#6b7280;display:block;margin-bottom:3px}',
-      'html.dark #crm-popover label{color:#9babb4}',
-      '#crm-pop-add{flex:1;padding:6px;border:none;border-radius:6px;background:#1f93ff;',
-      'color:#fff;font-size:12px;cursor:pointer;font-weight:500}',
-      '#crm-pop-add:disabled{background:#93c5fd;cursor:default}',
-      '#crm-pop-cancel{flex:1;padding:6px;border:1px solid #e4e7ed;border-radius:6px;',
-      'background:#fff;font-size:12px;cursor:pointer;color:#6b7280}',
-      'html.dark #crm-pop-cancel{background:#1c2b33;border-color:#3a4a54;color:#9babb4}'
+
+      /* ── botão Funções Extras (header conversa) ── */
+      '#crm-extras-btn{display:inline-flex;align-items:center;gap:5px;',
+      'padding:5px 12px;border-radius:6px;border:1px solid #e4e7ed;background:#fff;',
+      'color:#3d4f58;font-size:13px;font-weight:500;cursor:pointer;margin-right:8px;',
+      'transition:background .12s,border-color .12s,color .12s;white-space:nowrap;vertical-align:middle}',
+      '#crm-extras-btn:hover{background:#f3f4f6;border-color:#1f93ff;color:#1f93ff}',
+      'html.dark #crm-extras-btn{background:#243641;border-color:#3a4a54;color:#9babb4}',
+      'html.dark #crm-extras-btn:hover{border-color:#1f93ff;color:#1f93ff}',
+
+      /* ── modal overlay ── */
+      '#crm-modal-overlay{position:fixed;inset:0;z-index:10100;',
+      'background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}',
+      '#crm-modal{background:#fff;border-radius:12px;width:440px;max-width:92vw;',
+      'box-shadow:0 20px 60px rgba(0,0,0,.22);overflow:hidden}',
+      'html.dark #crm-modal{background:#1e2d35;color:#e5eef3}',
+      '#crm-modal-header{display:flex;align-items:center;justify-content:space-between;',
+      'padding:16px 20px;border-bottom:1px solid #e4e7ed;',
+      'font-weight:600;font-size:15px;color:#1c2b33}',
+      'html.dark #crm-modal-header{border-color:#2e404c;color:#e5eef3}',
+      '#crm-modal-close-btn{background:none;border:none;cursor:pointer;font-size:18px;',
+      'color:#6b7280;padding:2px 8px;border-radius:4px;line-height:1;flex-shrink:0}',
+      '#crm-modal-close-btn:hover{background:#f3f4f6;color:#1c2b33}',
+      'html.dark #crm-modal-close-btn:hover{background:#2e404c}',
+      '#crm-modal-body{padding:12px;max-height:60vh;overflow-y:auto}',
+
+      /* ── opções do menu principal ── */
+      '.crm-extra-option{display:flex;align-items:center;gap:12px;width:100%;',
+      'padding:12px 14px;border-radius:8px;border:none;background:none;cursor:pointer;',
+      'text-align:left;transition:background .12s;margin-bottom:4px}',
+      '.crm-extra-option:hover:not(.crm-opt-disabled){background:#f8f9fa}',
+      'html.dark .crm-extra-option:hover:not(.crm-opt-disabled){background:#243641}',
+      '.crm-extra-option.crm-opt-disabled{opacity:.38;cursor:not-allowed}',
+      '.crm-opt-icon{font-size:18px;flex-shrink:0;width:38px;height:38px;',
+      'display:flex;align-items:center;justify-content:center;',
+      'background:#f3f4f6;border-radius:8px}',
+      'html.dark .crm-opt-icon{background:#2e404c}',
+      '.crm-opt-info{flex:1;min-width:0}',
+      '.crm-opt-title{font-size:13px;font-weight:600;color:#1c2b33;margin-bottom:2px}',
+      'html.dark .crm-opt-title{color:#e5eef3}',
+      '.crm-opt-desc{font-size:11px;color:#6b7280}',
+      '.crm-opt-arrow{color:#9babb4;font-size:18px;line-height:1;flex-shrink:0}',
+
+      /* ── picker (funil / etapa) ── */
+      '.crm-modal-back-btn{background:none;border:none;cursor:pointer;color:#1f93ff;',
+      'font-size:13px;padding:0;display:flex;align-items:center;gap:3px}',
+      '.crm-picker-title{font-size:11px;color:#6b7280;margin-bottom:8px;font-weight:600;',
+      'text-transform:uppercase;letter-spacing:.05em;padding:0 4px}',
+      '.crm-picker-item{display:flex;align-items:center;gap:10px;width:100%;',
+      'padding:10px 12px;border-radius:8px;border:none;background:none;cursor:pointer;',
+      'text-align:left;transition:background .12s;margin-bottom:2px}',
+      '.crm-picker-item:hover{background:#f3f4f6}',
+      'html.dark .crm-picker-item:hover{background:#243641}',
+      '.crm-picker-name{flex:1;font-size:13px;font-weight:500;color:#1c2b33}',
+      'html.dark .crm-picker-name{color:#e5eef3}',
+      '.crm-picker-meta{font-size:11px;color:#9babb4}',
+
+      /* ── status messages ── */
+      '.crm-status-msg{text-align:center;padding:24px 0}',
+      '.crm-status-icon{font-size:36px;margin-bottom:10px}',
+      '.crm-status-title{font-size:14px;font-weight:600;color:#1c2b33;margin-bottom:4px}',
+      'html.dark .crm-status-title{color:#e5eef3}',
+      '.crm-status-sub{font-size:12px;color:#6b7280}'
     ].join('');
-    var head = document.head || document.getElementsByTagName('head')[0];
-    if (head) head.appendChild(s);
+    (document.head || document.getElementsByTagName('head')[0]).appendChild(s);
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
-   * PAINEL IFRAME (board)
+   * PAINEL BOARD (iframe)
    * ═══════════════════════════════════════════════════════════════════════ */
+  function getSidebarWidth() {
+    var sel = ['.woot-sidebar', 'aside.woot-sidebar', 'nav.woot-sidebar', 'aside'];
+    for (var i = 0; i < sel.length; i++) {
+      var el = document.querySelector(sel[i]);
+      if (el && el.offsetWidth > 80) return el.offsetWidth;
+    }
+    return 292; /* default Chatwoot */
+  }
+
   function ensurePanel() {
     if (panelEl || !document.body) return;
     panelEl = document.createElement('div');
@@ -133,17 +182,12 @@
     document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePanel(); });
   }
 
-  function syncPanelLeft() {
-    if (!panelEl) return;
-    var sidebar = document.querySelector('.woot-sidebar') ||
-                  document.querySelector('aside') ||
-                  document.querySelector('[class*="sidebar"]');
-    panelEl.style.left = (sidebar ? sidebar.offsetWidth : 60) + 'px';
-  }
-
   function openPanel(funnelId) {
     if (!panelEl) ensurePanel();
-    syncPanelLeft();
+    /* Sempre recalcula para garantir que não cobre o sidebar */
+    var w = getSidebarWidth();
+    panelEl.style.left = w + 'px';
+
     var iframe = document.getElementById('crm-iframe');
     if (!iframe) return;
     var url = KANBAN_URL + '/?account_token=' + ACCOUNT_TOKEN + '&embedded=true';
@@ -165,15 +209,16 @@
    * API HELPERS
    * ═══════════════════════════════════════════════════════════════════════ */
   function fetchFunnels(cb) {
+    if (funnelsCache.length) { cb(funnelsCache); return; }
     fetch(KANBAN_URL + '/api/v1/funnels', {
       headers: { 'X-Account-Token': ACCOUNT_TOKEN }
     })
     .then(function(r) { return r.json(); })
-    .then(function(data) {
-      funnelsCache = Array.isArray(data) ? data : (data.funnels || []);
+    .then(function(d) {
+      funnelsCache = Array.isArray(d) ? d : (d.funnels || []);
       cb(funnelsCache);
     })
-    .catch(function(err) { log('fetch funnels error:', err); cb([]); });
+    .catch(function(e) { log('fetchFunnels err', e); cb([]); });
   }
 
   function fetchStages(funnelId, cb) {
@@ -182,14 +227,26 @@
       headers: { 'X-Account-Token': ACCOUNT_TOKEN }
     })
     .then(function(r) { return r.json(); })
-    .then(function(data) {
-      stagesCache[funnelId] = data.stages || [];
+    .then(function(d) {
+      stagesCache[funnelId] = d.stages || [];
       cb(stagesCache[funnelId]);
     })
     .catch(function() { cb([]); });
   }
 
-  function createLead(funnelId, stageId, contactData, cb) {
+  function createLeadForConversation(funnelId, stageId, cb) {
+    var url = window.location.href;
+    var cm  = url.match(/\/conversations\/(\d+)/);
+    var ct  = url.match(/\/contacts\/(\d+)/);
+    var conversationId = cm ? cm[1] : null;
+    var contactId      = ct ? ct[1] : null;
+
+    /* Tenta extrair nome do contato do DOM */
+    var nameEl = document.querySelector('h1') ||
+                 document.querySelector('[class*="contact-name"]') ||
+                 document.querySelector('[class*="username"]');
+    var name = (nameEl ? nameEl.textContent.trim() : '') || 'Lead via Chatwoot';
+
     fetch(KANBAN_URL + '/api/v1/leads', {
       method: 'POST',
       headers: {
@@ -198,25 +255,25 @@
       },
       body: JSON.stringify({
         lead: {
-          funnel_id: funnelId,
-          stage_id: stageId,
-          title: contactData.name || 'Novo Lead',
-          contact_name: contactData.name,
-          contact_email: contactData.email,
-          contact_phone: contactData.phone,
-          chatwoot_contact_id: contactData.contactId,
-          chatwoot_conversation_id: contactData.conversationId,
+          funnel_id: Number(funnelId),
+          stage_id: Number(stageId),
+          title: name,
+          chatwoot_conversation_id: conversationId ? Number(conversationId) : null,
+          chatwoot_contact_id: contactId ? Number(contactId) : null,
           source: 'manual'
         }
       })
     })
-    .then(function(r) { return r.json(); })
-    .then(function(data) { cb(null, data); })
-    .catch(function(err) { cb(err, null); });
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(d) { throw d; });
+      return r.json();
+    })
+    .then(function(d) { cb(null, d); })
+    .catch(function(e) { cb(e, null); });
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
-   * SIDEBAR CRM (grupo com funis)
+   * SIDEBAR CRM
    * ═══════════════════════════════════════════════════════════════════════ */
   var CRM_ICON =
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
@@ -226,7 +283,7 @@
     '<rect x="16" y="3" width="4" height="15" rx="1.2"/></svg>';
 
   var CHEVRON_ICON =
-    '<svg id="crm-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" ' +
+    '<svg id="crm-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" ' +
     'stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
     '<polyline points="9 18 15 12 9 6"/></svg>';
 
@@ -236,8 +293,8 @@
       var fid = items[i].getAttribute('data-funnel-id');
       items[i].classList.toggle('crm-active', fid && Number(fid) === currentFunnelId);
     }
-    var header = document.getElementById('crm-group-header');
-    if (header) header.classList.toggle('crm-active', !!currentFunnelId);
+    var h = document.getElementById('crm-group-header');
+    if (h) h.classList.toggle('crm-active', !!currentFunnelId);
   }
 
   function populateFunnels(list) {
@@ -246,8 +303,8 @@
     ul.innerHTML = '';
     if (!list.length) {
       var empty = document.createElement('li');
-      empty.style.cssText = 'padding:6px 8px 6px 28px;font-size:12px;color:#9babb4';
-      empty.textContent = 'Nenhum funil encontrado';
+      empty.style.cssText = 'padding:6px 8px 6px 32px;font-size:12px;color:#9babb4';
+      empty.textContent = 'Nenhum funil';
       ul.appendChild(empty);
       return;
     }
@@ -266,15 +323,6 @@
     log('funis carregados:', list.length);
   }
 
-  /* ── Encontra o ponto exato de inserção no mesmo nível dos itens nativos ──
-   *
-   * Problema anterior: inseríamos no container pai do sidebar (flex-column com
-   * justify-content:space-between), deixando o gap enorme entre CRM e os itens.
-   *
-   * Solução: buscar "Caixa de Entrada" / "Inbox" por texto, subir na árvore
-   * até encontrar um container COLUNA (flex-direction:column ou block/ul),
-   * e inserir NESSE nível — exatamente irmão dos itens nativos.
-   * ─────────────────────────────────────────────────────────────────────── */
   function isColumnContainer(el) {
     try {
       var cs = window.getComputedStyle(el);
@@ -289,45 +337,38 @@
 
   function findInsertionPoint() {
     /*
-     * Objetivo: inserir o grupo CRM como PRIMEIRO filho do container de
-     * navegação de NÍVEL SUPERIOR (mesmo nível de "Conversas", "Contatos",
-     * "Relatórios") — nunca dentro de um sub-menu.
-     *
-     * Estratégia:
-     * 1. Busca labels de NÍVEL SUPERIOR (não sub-itens como "Caixa de Entrada")
-     * 2. Sobe até encontrar o container coluna com ≥3 filhos
-     * 3. Retorna { container, before: container.firstChild }  ← sempre no topo
+     * Busca SOMENTE labels de nível superior do nav (não sub-itens
+     * como "Caixa de Entrada" que ficam dentro de "Conversas").
+     * Insere sempre como PRIMEIRO filho do container encontrado.
      */
     var allEls = document.querySelectorAll('span, a, button, li, div');
-
-    /* Apenas labels de itens de NÍVEL SUPERIOR do nav */
     var topTexts = [
-      'Conversas', 'Conversations',
-      'Contatos',  'Contacts',
-      'Relatórios','Reports',
-      'Ajuda',     'Help',
+      'Conversas',     'Conversations',
+      'Contatos',      'Contacts',
+      'Relatórios',    'Reports',
+      'Campanhas',     'Campaigns',
+      'Central de Ajuda', 'Help Center',
       'Configurações', 'Settings'
     ];
 
     for (var t = 0; t < topTexts.length; t++) {
       for (var e = 0; e < allEls.length; e++) {
         var el = allEls[e];
+        /* Apenas folhas ou elementos com único filho SVG */
         var hasOnlySvg = el.children.length === 1 &&
-                         el.children[0].tagName === 'SVG';
+                         (el.children[0].tagName || '').toUpperCase() === 'SVG';
         if (el.children.length > 0 && !hasOnlySvg) continue;
         if (el.textContent.trim() !== topTexts[t]) continue;
         if (!el.offsetParent) continue;
 
-        /* Sobe até container COLUNA com ≥3 filhos (o nav de nível superior) */
+        /* Sobe até encontrar um container COLUNA com ≥3 filhos */
         var node = el;
-        for (var steps = 0; steps < 12; steps++) {
+        for (var steps = 0; steps < 14; steps++) {
           var parent = node.parentElement;
           if (!parent || parent === document.body) break;
           if (parent.children.length >= 3 && isColumnContainer(parent)) {
-            log('inserção via "' + topTexts[t] + '" | container:',
-                parent.tagName, window.getComputedStyle(parent).display,
-                '| filhos:', parent.children.length);
-            /* Sempre insere no INÍCIO — CRM é o primeiro item */
+            log('inserção via "' + topTexts[t] + '" | ' + parent.tagName +
+                ' ' + window.getComputedStyle(parent).display + ' | filhos:' + parent.children.length);
             return { container: parent, before: parent.firstChild };
           }
           node = parent;
@@ -335,34 +376,30 @@
       }
     }
 
-    /* ── Estratégia 2: links de nível superior por href ── */
-    var probes = [
-      'a[href*="/contacts"]', 'a[href*="/reports"]',
-      'a[href*="/campaigns"]', 'a[href*="/mentions"]'
+    /* Fallback via hrefs de itens de nível superior */
+    var hrefs = [
+      'a[href*="/contacts"]', 'a[href*="/reports"]', 'a[href*="/campaigns"]'
     ];
-    for (var i = 0; i < probes.length; i++) {
-      var link = document.querySelector(probes[i]);
+    for (var i = 0; i < hrefs.length; i++) {
+      var link = document.querySelector(hrefs[i]);
       if (!link || !link.offsetParent) continue;
-      var node2 = link;
-      for (var s = 0; s < 10; s++) {
-        var p = node2.parentElement;
+      var n = link;
+      for (var s = 0; s < 12; s++) {
+        var p = n.parentElement;
         if (!p || p === document.body) break;
         if (p.children.length >= 3 && isColumnContainer(p)) {
-          log('inserção via probe', probes[i], '| filhos:', p.children.length);
+          log('inserção via href', hrefs[i]);
           return { container: p, before: p.firstChild };
         }
-        node2 = p;
+        n = p;
       }
     }
 
-    /* ── Fallback genérico ── */
-    var fallbacks = ['aside nav', '.woot-sidebar nav', '.woot-sidebar', 'aside'];
-    for (var j = 0; j < fallbacks.length; j++) {
-      var found = document.querySelector(fallbacks[j]);
-      if (found) {
-        log('fallback:', fallbacks[j]);
-        return { container: found, before: found.firstChild };
-      }
+    /* Fallback genérico */
+    var fb = ['aside nav', '.woot-sidebar nav', '.woot-sidebar', 'aside'];
+    for (var j = 0; j < fb.length; j++) {
+      var found = document.querySelector(fb[j]);
+      if (found) { log('fallback:', fb[j]); return { container: found, before: found.firstChild }; }
     }
     return null;
   }
@@ -371,13 +408,9 @@
     if (document.getElementById('crm-sidebar-group')) return;
     injectStyles();
     ensurePanel();
-    var point = findInsertionPoint();
-    if (!point) {
-      log('ponto de inserção não encontrado ainda');
-      return;
-    }
-    var container = point.container;
-    var before    = point.before;
+
+    var pt = findInsertionPoint();
+    if (!pt) { log('ponto de inserção não encontrado'); return; }
 
     var group = document.createElement('div');
     group.id = 'crm-sidebar-group';
@@ -387,12 +420,12 @@
         CHEVRON_ICON +
       '</button>' +
       '<ul id="crm-funnel-list">' +
-        '<li class="crm-skeleton"></li>' +
-        '<li class="crm-skeleton" style="width:75%"></li>' +
+        '<li class="crm-skeleton" style="height:22px"></li>' +
+        '<li class="crm-skeleton" style="height:22px;width:70%;margin-top:2px"></li>' +
       '</ul>';
 
-    if (before) container.insertBefore(group, before);
-    else container.appendChild(group);
+    if (pt.before) pt.container.insertBefore(group, pt.before);
+    else pt.container.appendChild(group);
 
     var header = document.getElementById('crm-group-header');
     var list   = document.getElementById('crm-funnel-list');
@@ -415,380 +448,325 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
-   * BOTÃO "+ CRM" — CONVERSA E CONTATO
+   * BOTÃO "FUNÇÕES EXTRAS" — junto ao "Resolver" no header da conversa
    * ═══════════════════════════════════════════════════════════════════════ */
-
-  /* ── Parsear URL ─────────────────────────────────────────────────────── */
-  function parseUrl() {
-    var url = window.location.href;
-    var cm = url.match(/\/conversations\/(\d+)/);
-    var ct = url.match(/\/contacts\/(\d+)/);
-    return {
-      type: cm ? 'conversation' : (ct ? 'contact' : null),
-      conversationId: cm ? cm[1] : null,
-      contactId: ct ? ct[1] : null
-    };
-  }
-
-  /* ── Extrair dados do contato do DOM ─────────────────────────────────── */
-  function extractContactData(ctx) {
-    var name = '', email = '', phone = '';
-
-    /* Nome — tenta vários seletores */
-    var nameSelectors = [
-      '.contact-name', '[class*="contact-name"]',
-      '.contact__name', '.contact-info__name',
-      'h1', '.page-title', '.title'
-    ];
-    for (var i = 0; i < nameSelectors.length; i++) {
-      var el = document.querySelector(nameSelectors[i]);
-      if (el && el.textContent.trim()) { name = el.textContent.trim(); break; }
-    }
-
-    /* Email / Phone — se visíveis no DOM */
-    var emailEl = document.querySelector('[href^="mailto:"]');
-    if (emailEl) email = emailEl.textContent.trim();
-
-    var phoneEl = document.querySelector('[href^="tel:"]');
-    if (phoneEl) phone = phoneEl.textContent.trim();
-
-    return {
-      name: name,
-      email: email,
-      phone: phone,
-      conversationId: ctx.conversationId,
-      contactId: ctx.contactId
-    };
-  }
-
-  /* ── Encontrar onde ancorar o botão ──────────────────────────────────── */
-  /*
-   * Estratégia text-first + posição:
-   * 1. Texto de seção conhecido → sobe até container com ≥2 filhos
-   * 2. Para conversa: aside/div na metade direita da tela
-   * 3. Para contato: h1 → parentElement
-   * 4. Fallback: seletores CSS legados (Chatwoot v2/v3)
-   */
-  function findContactAnchor(type) {
-    var allEls = document.querySelectorAll('h4, h5, span, p, div, label');
-
-    if (type === 'conversation') {
-      /* Textos de seção típicos do painel direito da conversa */
-      var convTexts = [
-        'Ações da conversa',    'Conversation Actions',
-        'Participantes',        'Participants',
-        'Informações de contato','Contact Information',
-        'Etiquetas',            'Labels',
-        'Equipe',               'Team'
-      ];
-      for (var t = 0; t < convTexts.length; t++) {
-        for (var e = 0; e < allEls.length; e++) {
-          var el = allEls[e];
-          if (el.children.length > 1) continue;
-          if (el.textContent.trim() !== convTexts[t]) continue;
-          if (!el.offsetParent) continue;
-          /* Sobe buscando um container do lado direito */
-          var node = el;
-          for (var s = 0; s < 8; s++) {
-            var par = node.parentElement;
-            if (!par || par === document.body) break;
-            var rect = par.getBoundingClientRect();
-            if (rect.left > window.innerWidth * 0.45 && par.children.length >= 2) {
-              log('anchor conversa via texto "' + convTexts[t] + '"');
-              return par;
-            }
-            node = par;
-          }
-        }
-      }
-
-      /* Fallback 1: aside / painel direito por posição */
-      var panels = document.querySelectorAll('aside, section, [role="complementary"]');
-      for (var i = 0; i < panels.length; i++) {
-        var p = panels[i];
-        if (!p.offsetParent) continue;
-        var r = p.getBoundingClientRect();
-        if (r.left > window.innerWidth * 0.45 && r.width > 180) {
-          log('anchor conversa via painel direito posição');
-          return p;
-        }
-      }
-
-      /* Fallback 2: seletores CSS legados */
-      var legacyConv = [
-        '.contact-conversation-details', '.conversation-contact-details',
-        '.contact-details-wrap', '.contact-card', '.conversation-details',
-        '[class*="contact-details"]', '[class*="contact-info"]'
-      ];
-      for (var j = 0; j < legacyConv.length; j++) {
-        var found = document.querySelector(legacyConv[j]);
-        if (found && found.offsetParent) { log('anchor conversa legado', legacyConv[j]); return found; }
-      }
-
-    } else {
-      /* ── Página de contato ── */
-      /* 1. Textos de seção conhecidos */
-      var contactTexts = [
-        'Conversas anteriores', 'Previous Conversations',
-        'Notas', 'Notes',
-        'Informações', 'Information',
-        'Atividade recente', 'Recent Activity'
-      ];
-      for (var t2 = 0; t2 < contactTexts.length; t2++) {
-        for (var e2 = 0; e2 < allEls.length; e2++) {
-          var el2 = allEls[e2];
-          if (el2.children.length > 1) continue;
-          if (el2.textContent.trim() !== contactTexts[t2]) continue;
-          if (!el2.offsetParent) continue;
-          var node2 = el2;
-          for (var s2 = 0; s2 < 7; s2++) {
-            var par2 = node2.parentElement;
-            if (!par2 || par2 === document.body) break;
-            if (par2.children.length >= 2) { log('anchor contato via texto "' + contactTexts[t2] + '"'); return par2; }
-            node2 = par2;
-          }
-        }
-      }
-
-      /* 2. h1 (nome do contato) → container pai */
-      var h1 = document.querySelector('h1');
-      if (h1 && h1.offsetParent) {
-        var node3 = h1;
-        for (var s3 = 0; s3 < 5; s3++) {
-          var par3 = node3.parentElement;
-          if (!par3 || par3 === document.body) break;
-          if (par3.children.length >= 2) { log('anchor contato via h1'); return par3; }
-          node3 = par3;
-        }
-        return h1.parentElement;
-      }
-
-      /* 3. Seletores CSS legados */
-      var legacyCt = [
-        '.contact-info', '.contact-details',
-        '[class*="contact-page"]', '[class*="contact-header"]', '.page-title'
-      ];
-      for (var k = 0; k < legacyCt.length; k++) {
-        var el3 = document.querySelector(legacyCt[k]);
-        if (el3 && el3.offsetParent) { log('anchor contato legado', legacyCt[k]); return el3; }
+  function findResolverButton() {
+    var all = document.querySelectorAll('button, [role="button"]');
+    for (var i = 0; i < all.length; i++) {
+      var btn = all[i];
+      if (!btn.offsetParent) continue;
+      var txt = (btn.textContent || '').trim();
+      /* Match exato ou starts-with para cobrir "Resolver ▾" */
+      if (txt === 'Resolver' || txt === 'Resolve' ||
+          txt === 'Reopen' || txt === 'Reabrir' ||
+          txt.startsWith('Resolver') || txt.startsWith('Resolve')) {
+        return btn;
       }
     }
-
     return null;
   }
 
-  /* ── Popover funil/etapa ─────────────────────────────────────────────── */
-  function closePopover() {
-    if (crmPopover) { crmPopover.remove(); crmPopover = null; }
-  }
+  function injectHeaderButton() {
+    var url    = window.location.href;
+    var isConv = /\/conversations\/\d+/.test(url) ||
+                 /\/inbox-view/.test(url) ||
+                 /\/dashboard/.test(url) ||
+                 /\/mentions/.test(url) ||
+                 /\/notifications/.test(url);
 
-  function openPopover(anchorEl, contactData) {
-    closePopover();
+    /* Remove botão antigo se a URL mudou */
+    var existingBtn = document.getElementById('crm-extras-btn');
+    if (existingBtn) {
+      if (existingBtn.offsetParent && url === lastHeaderUrl) return; /* ainda válido */
+      existingBtn.remove();
+    }
 
-    var pop = document.createElement('div');
-    pop.id = 'crm-popover';
-    pop.innerHTML =
-      '<div style="font-size:13px;font-weight:600;color:#1c2b33;margin-bottom:10px">' +
-        '\uD83D\uDCCB Adicionar ao CRM' +
-      '</div>' +
-      '<div style="margin-bottom:8px">' +
-        '<label>Funil</label>' +
-        '<select id="crm-pop-funnel"><option value="">Selecione...</option></select>' +
-      '</div>' +
-      '<div style="margin-bottom:12px">' +
-        '<label>Etapa</label>' +
-        '<select id="crm-pop-stage" disabled><option value="">Selecione o funil...</option></select>' +
-      '</div>' +
-      '<div style="display:flex;gap:6px">' +
-        '<button id="crm-pop-cancel">Cancelar</button>' +
-        '<button id="crm-pop-add" disabled>Adicionar</button>' +
-      '</div>' +
-      '<div id="crm-pop-status" style="font-size:11px;margin-top:8px;text-align:center;display:none"></div>';
+    if (!isConv) return;
 
-    document.body.appendChild(pop);
-    crmPopover = pop;
-
-    /* Posicionar abaixo do botão */
-    var rect = anchorEl.getBoundingClientRect();
-    var top  = rect.bottom + 6;
-    var left = rect.left;
-    /* Não sair da tela pela direita */
-    if (left + 290 > window.innerWidth) left = window.innerWidth - 298;
-    pop.style.top  = top  + 'px';
-    pop.style.left = left + 'px';
-
-    var funnelSel = document.getElementById('crm-pop-funnel');
-    var stageSel  = document.getElementById('crm-pop-stage');
-    var addBtn    = document.getElementById('crm-pop-add');
-    var statusEl  = document.getElementById('crm-pop-status');
-
-    /* Preencher funis */
-    funnelsCache.forEach(function(f) {
-      var opt = document.createElement('option');
-      opt.value = f.id; opt.textContent = f.name;
-      funnelSel.appendChild(opt);
-    });
-
-    /* Ao mudar funil → carrega etapas */
-    funnelSel.addEventListener('change', function() {
-      stageSel.innerHTML = '<option value="">Carregando...</option>';
-      stageSel.disabled = true;
-      addBtn.disabled = true;
-      if (!funnelSel.value) { stageSel.innerHTML = '<option value="">Selecione o funil...</option>'; return; }
-      fetchStages(funnelSel.value, function(stages) {
-        stageSel.innerHTML = '<option value="">Selecione a etapa...</option>';
-        stages.forEach(function(s) {
-          var opt = document.createElement('option');
-          opt.value = s.id; opt.textContent = s.name;
-          stageSel.appendChild(opt);
-        });
-        stageSel.disabled = false;
-      });
-    });
-
-    stageSel.addEventListener('change', function() {
-      addBtn.disabled = !stageSel.value;
-    });
-
-    document.getElementById('crm-pop-cancel').addEventListener('click', closePopover);
-
-    addBtn.addEventListener('click', function() {
-      if (!funnelSel.value || !stageSel.value) return;
-      addBtn.disabled = true;
-      addBtn.textContent = 'Adicionando...';
-
-      createLead(Number(funnelSel.value), Number(stageSel.value), contactData,
-        function(err) {
-          if (err) {
-            statusEl.textContent = '\u274C Erro ao criar lead';
-            statusEl.style.color = '#ef4444';
-            statusEl.style.display = 'block';
-            addBtn.disabled = false;
-            addBtn.textContent = 'Adicionar';
-          } else {
-            statusEl.textContent = '\u2705 Lead criado com sucesso!';
-            statusEl.style.color = '#10b981';
-            statusEl.style.display = 'block';
-            setTimeout(closePopover, 1400);
-          }
-        });
-    });
-
-    /* Fechar ao clicar fora */
-    setTimeout(function() {
-      document.addEventListener('click', function handler(e) {
-        if (crmPopover && !crmPopover.contains(e.target) &&
-            !(e.target.classList && e.target.classList.contains('crm-add-btn'))) {
-          closePopover();
-          document.removeEventListener('click', handler);
-        }
-      });
-    }, 80);
-  }
-
-  /* ── Injetar botão no DOM ────────────────────────────────────────────── */
-  var lastBtnUrl   = '';
-  var btnRetries   = 0;
-  var MAX_BTN_RETRIES = 20;
-
-  function injectContactButton() {
-    var ctx = parseUrl();
-    if (!ctx.type) return;
-
-    var currentUrl = window.location.href;
-    /* Se já injetamos nessa URL, não duplicar */
-    if (document.getElementById('crm-contact-btn') && currentUrl === lastBtnUrl) return;
-
-    var anchor = findContactAnchor(ctx.type);
-    if (!anchor) {
-      btnRetries++;
-      if (btnRetries < MAX_BTN_RETRIES) setTimeout(injectContactButton, 400);
+    var resolverBtn = findResolverButton();
+    if (!resolverBtn) {
+      headerBtnRetry++;
+      if (headerBtnRetry < 40) setTimeout(injectHeaderButton, 400);
       return;
     }
-    btnRetries = 0;
-    lastBtnUrl = currentUrl;
-
-    /* Remove botão antigo se mudou de página */
-    var old = document.getElementById('crm-contact-btn');
-    if (old) old.remove();
-
-    var contactData = extractContactData(ctx);
+    headerBtnRetry = 0;
+    lastHeaderUrl  = url;
 
     var btn = document.createElement('button');
-    btn.id = 'crm-contact-btn';
-    btn.className = 'crm-add-btn';
+    btn.id = 'crm-extras-btn';
     btn.innerHTML =
-      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-      'stroke-width="3" stroke-linecap="round" stroke-linejoin="round">' +
-      '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' +
-      ' CRM';
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>' +
+      '</svg> Fun\u00e7\u00f5es Extras';
 
     btn.addEventListener('click', function(e) {
       e.stopPropagation();
-      /* Re-extrair dados na hora do clique (DOM pode ter atualizado) */
-      var fresh = extractContactData(ctx);
-      /* Garantir que os funis estão carregados */
-      if (!funnelsCache.length) {
-        fetchFunnels(function() { openPopover(btn, fresh); });
-      } else {
-        openPopover(btn, fresh);
-      }
+      openExtrasModal();
     });
 
-    /* Inserir no começo do anchor */
-    if (anchor.firstChild) anchor.insertBefore(btn, anchor.firstChild);
-    else anchor.appendChild(btn);
+    /*
+     * Inserção: sobe do botão "Resolver" até achar seu container direto
+     * na barra de ações (geralmente um div com múltiplos filhos).
+     * Insere o botão ANTES desse container.
+     */
+    var target = resolverBtn;
+    var par = resolverBtn.parentElement;
+    /* Se está num split-button (wrapper com poucos filhos), usa o wrapper */
+    if (par && par.children.length <= 3 && par !== document.body) target = par;
 
-    log('\u2705 botão +CRM injetado (' + ctx.type + ')');
+    if (target.parentElement) {
+      target.parentElement.insertBefore(btn, target);
+      log('\u2705 Fun\u00e7\u00f5es Extras injetado');
+    }
   }
 
-  /* ── Monitorar navegação SPA ─────────────────────────────────────────── */
+  /* ═══════════════════════════════════════════════════════════════════════
+   * MODAL — FUNÇÕES EXTRAS
+   * ═══════════════════════════════════════════════════════════════════════ */
+  function closeModal() {
+    if (modalEl) { modalEl.remove(); modalEl = null; }
+  }
+
+  function bindClose() {
+    var closeBtn = document.getElementById('crm-modal-close-btn');
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (modalEl) modalEl.addEventListener('click', function(e) {
+      if (e.target === modalEl) closeModal();
+    });
+  }
+
+  function openExtrasModal() {
+    closeModal();
+    modalEl = document.createElement('div');
+    modalEl.id = 'crm-modal-overlay';
+    modalEl.innerHTML =
+      '<div id="crm-modal">' +
+        '<div id="crm-modal-header">' +
+          '<span>Fun\u00e7\u00f5es Extras</span>' +
+          '<button id="crm-modal-close-btn">\u2715</button>' +
+        '</div>' +
+        '<div id="crm-modal-body"></div>' +
+      '</div>';
+    document.body.appendChild(modalEl);
+    bindClose();
+    renderMainMenu();
+  }
+
+  function setModalHeader(leftHtml, showClose) {
+    var header = document.getElementById('crm-modal-header');
+    if (!header) return;
+    header.innerHTML = leftHtml + (showClose !== false
+      ? '<button id="crm-modal-close-btn">\u2715</button>'
+      : '');
+    bindClose();
+  }
+
+  /* ── Menu principal ── */
+  function renderMainMenu() {
+    setModalHeader('<span>Fun\u00e7\u00f5es Extras</span>');
+
+    var body = document.getElementById('crm-modal-body');
+    if (!body) return;
+
+    body.innerHTML =
+      '<button class="crm-extra-option" id="crm-opt-funil">' +
+        '<div class="crm-opt-icon">\uD83D\uDCCB</div>' +
+        '<div class="crm-opt-info">' +
+          '<div class="crm-opt-title">Associar ao Funil</div>' +
+          '<div class="crm-opt-desc">Vincular conversa a uma etapa do kanban</div>' +
+        '</div>' +
+        '<span class="crm-opt-arrow">\u203A</span>' +
+      '</button>' +
+      '<button class="crm-extra-option crm-opt-disabled">' +
+        '<div class="crm-opt-icon">\uD83D\uDD50</div>' +
+        '<div class="crm-opt-info">' +
+          '<div class="crm-opt-title">Agendar Mensagens</div>' +
+          '<div class="crm-opt-desc">Em breve</div>' +
+        '</div>' +
+      '</button>' +
+      '<button class="crm-extra-option crm-opt-disabled">' +
+        '<div class="crm-opt-icon">\uD83D\uDD04</div>' +
+        '<div class="crm-opt-info">' +
+          '<div class="crm-opt-title">Flow Sequ\u00eancia</div>' +
+          '<div class="crm-opt-desc">Em breve</div>' +
+        '</div>' +
+      '</button>' +
+      '<button class="crm-extra-option crm-opt-disabled">' +
+        '<div class="crm-opt-icon">\uD83D\uDCC5</div>' +
+        '<div class="crm-opt-info">' +
+          '<div class="crm-opt-title">Agendar Atendimento</div>' +
+          '<div class="crm-opt-desc">Em breve</div>' +
+        '</div>' +
+      '</button>';
+
+    document.getElementById('crm-opt-funil').addEventListener('click', renderFunnelPicker);
+  }
+
+  /* ── Picker de funis ── */
+  function renderFunnelPicker() {
+    setModalHeader(
+      '<button class="crm-modal-back-btn" id="crm-modal-back">\u2039 Voltar</button>'
+    );
+    document.getElementById('crm-modal-back').addEventListener('click', renderMainMenu);
+
+    var body = document.getElementById('crm-modal-body');
+    if (!body) return;
+    body.innerHTML =
+      '<div class="crm-picker-title">Selecione um funil:</div>' +
+      '<div id="crm-funnel-items">' +
+        '<div style="color:#9babb4;font-size:13px;padding:8px">Carregando...</div>' +
+      '</div>';
+
+    fetchFunnels(function(funnels) {
+      var container = document.getElementById('crm-funnel-items');
+      if (!container) return;
+      if (!funnels.length) {
+        container.innerHTML = '<div style="color:#9babb4;font-size:13px;padding:8px">Nenhum funil encontrado</div>';
+        return;
+      }
+      container.innerHTML = '';
+      funnels.forEach(function(f) {
+        var btn = document.createElement('button');
+        btn.className = 'crm-picker-item';
+        btn.innerHTML =
+          '<span style="width:10px;height:10px;border-radius:50%;background:' + (f.color || '#1f93ff') + ';flex-shrink:0"></span>' +
+          '<span class="crm-picker-name">' + (f.name || 'Funil') + '</span>' +
+          '<span class="crm-picker-meta">' + (f.stages_count !== undefined ? f.stages_count + ' etapas' : '') + '</span>' +
+          '<span class="crm-opt-arrow">\u203A</span>';
+        btn.addEventListener('click', function() { renderStagePicker(f); });
+        container.appendChild(btn);
+      });
+    });
+  }
+
+  /* ── Picker de etapas ── */
+  function renderStagePicker(funnel) {
+    setModalHeader(
+      '<button class="crm-modal-back-btn" id="crm-modal-back">\u2039 Voltar</button>'
+    );
+    document.getElementById('crm-modal-back').addEventListener('click', renderFunnelPicker);
+
+    var body = document.getElementById('crm-modal-body');
+    if (!body) return;
+    body.innerHTML =
+      '<div class="crm-picker-title">' + (funnel.name || 'Funil') + '</div>' +
+      '<div id="crm-stage-items">' +
+        '<div style="color:#9babb4;font-size:13px;padding:8px">Carregando etapas...</div>' +
+      '</div>';
+
+    fetchStages(funnel.id, function(stages) {
+      var container = document.getElementById('crm-stage-items');
+      if (!container) return;
+      if (!stages.length) {
+        container.innerHTML = '<div style="color:#9babb4;font-size:13px;padding:8px">Nenhuma etapa encontrada</div>';
+        return;
+      }
+      container.innerHTML = '';
+      stages.forEach(function(stage) {
+        var btn = document.createElement('button');
+        btn.className = 'crm-picker-item';
+        btn.innerHTML =
+          '<span style="width:10px;height:10px;border-radius:50%;background:' + (stage.color || '#1f93ff') + ';flex-shrink:0"></span>' +
+          '<span class="crm-picker-name">' + (stage.name || 'Etapa') + '</span>' +
+          '<span class="crm-opt-arrow">\u203A</span>';
+        btn.addEventListener('click', function() { doAssociate(funnel, stage, btn); });
+        container.appendChild(btn);
+      });
+    });
+  }
+
+  /* ── Criar lead ── */
+  function doAssociate(funnel, stage, btn) {
+    btn.disabled = true;
+    btn.style.opacity = '.5';
+
+    createLeadForConversation(funnel.id, stage.id, function(err) {
+      var body = document.getElementById('crm-modal-body');
+      if (!body) return;
+
+      if (err) {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        var errDiv = document.createElement('div');
+        errDiv.style.cssText = 'color:#dc2626;font-size:12px;padding:8px;text-align:center';
+        errDiv.textContent = '\u274C Erro ao associar. Tente novamente.';
+        body.appendChild(errDiv);
+        return;
+      }
+
+      /* Sucesso */
+      setModalHeader('<span>Fun\u00e7\u00f5es Extras</span>');
+      body.innerHTML =
+        '<div class="crm-status-msg">' +
+          '<div class="crm-status-icon">\u2705</div>' +
+          '<div class="crm-status-title">Associado com sucesso!</div>' +
+          '<div class="crm-status-sub">' + funnel.name + ' \u2192 ' + stage.name + '</div>' +
+        '</div>';
+      setTimeout(closeModal, 1800);
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   * ROTA SPA — detectar navegação e re-injetar o botão
+   * ═══════════════════════════════════════════════════════════════════════ */
+  function onUrlChange() {
+    closeModal();
+    headerBtnRetry = 0;
+    setTimeout(injectHeaderButton, 600);
+    setTimeout(injectHeaderButton, 1400);
+    setTimeout(injectHeaderButton, 2800);
+  }
+
   function watchRoutes() {
     var lastUrl = window.location.href;
-
-    function onUrlChange() {
+    function check() {
       var cur = window.location.href;
-      if (cur === lastUrl) return;
-      lastUrl = cur;
-      btnRetries = 0;
-      /* Pequeno delay para o Vue renderizar o novo componente */
-      setTimeout(injectContactButton, 600);
-      setTimeout(injectContactButton, 1200);
+      if (cur !== lastUrl) { lastUrl = cur; onUrlChange(); }
     }
-
-    window.addEventListener('hashchange', onUrlChange);
-    window.addEventListener('popstate', onUrlChange);
-
-    /* Detecta navegação sem eventos (pushState do Vue Router) */
-    new MutationObserver(onUrlChange)
-      .observe(document.body, { childList: true, subtree: true });
+    window.addEventListener('hashchange', check);
+    window.addEventListener('popstate', check);
+    /* Detecta pushState do Vue Router que não dispara eventos */
+    setInterval(check, 600);
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
    * BOOTSTRAP
    * ═══════════════════════════════════════════════════════════════════════ */
-  /* Re-injeção sidebar após SPA navigation */
-  new MutationObserver(function() {
-    if (!document.getElementById('crm-sidebar-group') && findInsertionPoint()) injectSidebar();
-  }).observe(document.documentElement, { childList: true, subtree: true });
+
+  /* MutationObserver APENAS para redetectar o sidebar após SPA navigation.
+   * Debounced para não interferir no ciclo de render do Vue.          */
+  var sidebarObserver = new MutationObserver(function() {
+    clearTimeout(sidebarTimer);
+    sidebarTimer = setTimeout(function() {
+      if (!document.getElementById('crm-sidebar-group')) injectSidebar();
+    }, 400);
+  });
 
   /* Retry periódico para o sidebar */
-  var interval = setInterval(function() {
+  var sidebarInterval = setInterval(function() {
     retryCount++;
-    if (document.getElementById('crm-sidebar-group')) { clearInterval(interval); return; }
+    if (document.getElementById('crm-sidebar-group')) {
+      clearInterval(sidebarInterval);
+      return;
+    }
     injectSidebar();
-    if (retryCount >= MAX_RETRIES) clearInterval(interval);
+    if (retryCount >= MAX_RETRIES) clearInterval(sidebarInterval);
   }, 500);
 
   function boot() {
-    log('iniciando v3.2');
+    log('iniciando v4.0');
     injectStyles();
     ensurePanel();
     injectSidebar();
     watchRoutes();
-    /* Tenta injetar botão de contato na página atual */
-    setTimeout(injectContactButton, 800);
-    setTimeout(injectContactButton, 1800);
+    /* Tenta injetar botão Funções Extras na página atual */
+    setTimeout(injectHeaderButton, 800);
+    setTimeout(injectHeaderButton, 1600);
+    setTimeout(injectHeaderButton, 3000);
+    /* Observer do sidebar */
+    sidebarObserver.observe(document.body || document.documentElement,
+      { childList: true, subtree: true });
   }
 
   if (document.body) boot();
