@@ -6,86 +6,128 @@ import draggable from 'vuedraggable';
 const funnels = ref([]);
 const selected = ref(null);
 const loading = ref(false);
+const saveError = ref('');
 
 const newFunnel = ref({ name: '', color: '#1f93ff', description: '' });
 const newStage = ref({ name: '', color: '#64748b', stage_type: 'open' });
 
+function handleErr(e, fallback = 'Erro ao salvar.') {
+  const msg = e?.response?.data?.errors?.join(', ')
+    || e?.response?.data?.error
+    || e?.message
+    || fallback;
+  saveError.value = msg;
+  console.error('[FunnelSettings]', msg, e);
+}
+
 const load = async () => {
   loading.value = true;
-  const { data } = await FunnelsAPI.list();
-  funnels.value = data;
-  if (!selected.value && data.length) selected.value = data[0];
-  loading.value = false;
+  saveError.value = '';
+  try {
+    const { data } = await FunnelsAPI.list();
+    funnels.value = data;
+    if (!selected.value && data.length) selected.value = data[0];
+  } catch (e) { handleErr(e, 'Erro ao carregar funis.'); }
+  finally { loading.value = false; }
 };
 
 onMounted(load);
 
 const select = async (f) => {
-  const { data } = await FunnelsAPI.get(f.id);
-  selected.value = data;
+  try {
+    const { data } = await FunnelsAPI.get(f.id);
+    selected.value = data;
+  } catch (e) { handleErr(e); }
 };
 
 const createFunnel = async () => {
   if (!newFunnel.value.name) return;
-  await FunnelsAPI.create(newFunnel.value);
-  newFunnel.value = { name: '', color: '#1f93ff', description: '' };
-  await load();
+  saveError.value = '';
+  try {
+    await FunnelsAPI.create(newFunnel.value);
+    newFunnel.value = { name: '', color: '#1f93ff', description: '' };
+    await load();
+  } catch (e) { handleErr(e, 'Erro ao criar funil.'); }
 };
 
 const setDefault = async (f) => {
-  await FunnelsAPI.update(f.id, { is_default: true });
-  await load();
+  try {
+    await FunnelsAPI.update(f.id, { is_default: true });
+    await load();
+  } catch (e) { handleErr(e); }
 };
 
 const duplicateFunnel = async (f) => {
-  await FunnelsAPI.duplicate(f.id);
-  await load();
+  try {
+    await FunnelsAPI.duplicate(f.id);
+    await load();
+  } catch (e) { handleErr(e, 'Erro ao duplicar funil.'); }
 };
 
 const deleteFunnel = async (f) => {
   if (!confirm(`Excluir funil "${f.name}" e todos seus leads? Esta ação é irreversível.`)) return;
-  await FunnelsAPI.destroy(f.id);
-  selected.value = null;
-  await load();
+  try {
+    await FunnelsAPI.destroy(f.id);
+    selected.value = null;
+    await load();
+  } catch (e) { handleErr(e, 'Erro ao excluir funil.'); }
 };
 
 const updateFunnel = async () => {
   if (!selected.value) return;
-  await FunnelsAPI.update(selected.value.id, {
-    name: selected.value.name,
-    description: selected.value.description,
-    color: selected.value.color
-  });
-  await load();
+  saveError.value = '';
+  try {
+    await FunnelsAPI.update(selected.value.id, {
+      name: selected.value.name,
+      description: selected.value.description,
+      color: selected.value.color
+    });
+    await load();
+  } catch (e) { handleErr(e, 'Erro ao salvar funil.'); }
 };
 
 const addStage = async () => {
   if (!newStage.value.name || !selected.value) return;
-  await StagesAPI.create(selected.value.id, newStage.value);
-  newStage.value = { name: '', color: '#64748b', stage_type: 'open' };
-  await select(selected.value);
+  saveError.value = '';
+  try {
+    await StagesAPI.create(selected.value.id, newStage.value);
+    newStage.value = { name: '', color: '#64748b', stage_type: 'open' };
+    await select(selected.value);
+  } catch (e) { handleErr(e, 'Erro ao criar etapa.'); }
 };
 
 const updateStage = async (s) => {
-  await StagesAPI.update(selected.value.id, s.id, {
-    name: s.name, color: s.color, stage_type: s.stage_type, sla_hours: s.sla_hours
-  });
+  try {
+    await StagesAPI.update(selected.value.id, s.id, {
+      name: s.name, color: s.color, stage_type: s.stage_type, sla_hours: s.sla_hours
+    });
+  } catch (e) { handleErr(e, 'Erro ao atualizar etapa.'); }
 };
 
 const deleteStage = async (s) => {
   if (!confirm(`Excluir etapa "${s.name}"? Leads serão movidos para a primeira etapa restante.`)) return;
-  await StagesAPI.destroy(selected.value.id, s.id);
-  await select(selected.value);
+  try {
+    await StagesAPI.destroy(selected.value.id, s.id);
+    await select(selected.value);
+  } catch (e) { handleErr(e, 'Erro ao excluir etapa.'); }
 };
 
 const persistStageOrder = async () => {
-  const order = selected.value.stages.map(s => s.id);
-  await FunnelsAPI.reorderStages(selected.value.id, order);
+  try {
+    const order = selected.value.stages.map(s => s.id);
+    await FunnelsAPI.reorderStages(selected.value.id, order);
+  } catch (e) { handleErr(e); }
 };
 </script>
 
 <template>
   <div class="h-full grid grid-cols-12 gap-4 p-5 overflow-hidden">
+    <!-- Erro global -->
+    <div v-if="saveError" class="col-span-12 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center justify-between">
+      <span>{{ saveError }}</span>
+      <button @click="saveError = ''" class="text-red-400 hover:text-red-600 ml-3">✕</button>
+    </div>
+
     <!-- Funnels list -->
     <div class="col-span-3 bg-white rounded-lg border border-slate-200 p-3 overflow-y-auto">
       <h2 class="font-semibold mb-2">Funis</h2>
