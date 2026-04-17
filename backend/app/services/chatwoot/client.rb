@@ -38,27 +38,38 @@ module Chatwoot
       get("/api/v1/accounts/#{@account_id}/labels")
     end
 
-    def message_templates(template_type: nil)
-      params = template_type.present? ? { template_type: template_type } : {}
-      raw_res = connection.get("/api/v1/accounts/#{@account_id}/message_templates", params)
-      Rails.logger.info "[CRM] message_templates raw status=#{raw_res.status} body=#{raw_res.body.inspect[0..500]}"
+    # Busca templates WhatsApp aprovados via GET /inboxes (campo message_templates por inbox)
+    # O endpoint /message_templates não existe nesta versão do Chatwoot —
+    # os templates ficam embedados nos dados de cada inbox WhatsApp.
+    def message_templates
+      raw_res = connection.get("/api/v1/accounts/#{@account_id}/inboxes")
+      Rails.logger.info "[CRM] message_templates (via inboxes) status=#{raw_res.status}"
 
       unless raw_res.success?
-        raise ApiError, "Chatwoot API #{raw_res.status}: #{raw_res.body}"
+        raise ApiError, "Chatwoot API #{raw_res.status}: #{raw_res.body.inspect[0..300]}"
       end
 
-      response = raw_res.body
-      # Chatwoot pode retornar Array direto ou { payload: [...] }
-      case response
-      when Array then response
-      when Hash  then response['payload'] || response['templates'] || []
-      else []
+      inboxes = raw_res.body
+      payload = case inboxes
+                when Hash  then inboxes['payload'] || []
+                when Array then inboxes
+                else []
+                end
+
+      templates = []
+      payload.each do |inbox|
+        next unless inbox.is_a?(Hash) && inbox['channel_type']&.include?('Whatsapp')
+        t = inbox['message_templates']
+        templates.concat(t) if t.is_a?(Array)
       end
+
+      Rails.logger.info "[CRM] message_templates found=#{templates.size}"
+      templates
     rescue ApiError => e
       Rails.logger.warn "[CRM] message_templates ApiError account=#{@account_id}: #{e.message}"
       []
     rescue => e
-      Rails.logger.error "[CRM] message_templates erro inesperado account=#{@account_id}: #{e.message}"
+      Rails.logger.error "[CRM] message_templates erro account=#{@account_id}: #{e.message}"
       []
     end
 
