@@ -15,8 +15,8 @@ class CreateTasks < ActiveRecord::Migration[7.1]
       t.timestamps
     end
 
-    add_index :tasks, [:account_id, :status]
-    add_index :tasks, [:account_id, :due_at]
-    add_index :tasks, [:lead_id]
+    add_index :tasks, [:account_id, :status], if_not_exists: true
+    add_index :tasks, [:account_id, :due_at], if_not_exists: true
+    add_index :tasks, [:lead_id],             if_not_exists: true
   end
 end
