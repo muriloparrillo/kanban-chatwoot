@@ -60,7 +60,6 @@ const save = async () => {
       description:   detail.value.description,
       value:         detail.value.value,
       priority:      detail.value.priority,
-      due_at:        detail.value.due_at,
       product_id:    detail.value.product_id || null,
       contact_name:  detail.value.contact?.name,
       contact_email: detail.value.contact?.email,
@@ -257,15 +256,6 @@ const ensureContact = () => {
               rows="3"
               class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 resize-none"
               placeholder="Notas rápidas sobre o lead…"></textarea>
-          </div>
-
-          <!-- Vencimento -->
-          <div>
-            <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Vencimento</label>
-            <input
-              v-model="detail.due_at"
-              type="date"
-              class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
           </div>
 
           <!-- Dados do contato -->

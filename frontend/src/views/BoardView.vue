@@ -42,6 +42,9 @@ const fmtCurrency = (v) =>
   'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 onMounted(async () => {
+  // Permite que o sidebar do inject abra direto na view lista via ?view=list
+  if (routeInfo.query.view === 'list') activeView.value = 'list';
+
   await store.loadFunnels();
   const requestedId = routeInfo.params.funnelId ? Number(routeInfo.params.funnelId) : null;
   if (requestedId) store.currentFunnelId = requestedId;
