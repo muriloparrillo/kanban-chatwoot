@@ -129,3 +129,10 @@ export const TagsAPI = {
 export const AgentsAPI = {
   list: () => api.get('/api/v1/agents')
 };
+
+export const ProductsAPI = {
+  list:    (all = false) => api.get('/api/v1/products', { params: all ? { all: 'true' } : {} }),
+  create:  (payload) => api.post('/api/v1/products', { product: payload }),
+  update:  (id, payload) => api.patch(`/api/v1/products/${id}`, { product: payload }),
+  destroy: (id) => api.delete(`/api/v1/products/${id}`)
+};

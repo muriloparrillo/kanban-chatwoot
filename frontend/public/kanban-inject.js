@@ -1,5 +1,7 @@
 /**
- * Kanban/CRM Inject v4.0
+ * Kanban/CRM Inject v4.2
+ * - getSidebarWidth: 3 strategies (main content left edge, walk-up, CSS selector)
+ * - extractContactFromDOM: multi-strategy name extraction (link text + DOM scan)
  * - Sidebar: CRM primeiro no nav de nível superior
  * - Painel: left = largura real do sidebar (não cobre o nav)
  * - Funções Extras: botão no header da conversa junto ao "Resolver"
@@ -159,32 +161,78 @@
    * PAINEL BOARD (iframe)
    * ═══════════════════════════════════════════════════════════════════════ */
   function getSidebarWidth() {
+    var vpW = window.innerWidth;
+
     /*
-     * Estratégia primária: subir a partir de #crm-sidebar-group
-     * até encontrar o container que esteja encostado na borda esquerda
-     * E seja estreito (< 45% do viewport) — exclui o painel direito.
+     * Estratégia 1: borda esquerda da área de conteúdo principal.
+     * No Chatwoot o sidebar termina exatamente onde o conteúdo começa.
+     * Qualquer um desses seletores começando em x ≥ 150px é o limite real.
+     */
+    var mainSels = [
+      '.conversations-list-wrap',
+      '.conversation-list',
+      'div[class*="conversations-list"]',
+      'div[class*="conversation-list"]',
+      '.view-box',
+      'div[class*="view-box"]',
+      '.reports-overview',
+      'div[class*="reports-overview"]',
+      '.contacts-page',
+      'div[class*="contacts-page"]',
+      '.app-content',
+      'main[role="main"]',
+      '.campaigns-table-wrap',
+      'div[class*="campaigns"]',
+      '.help-center',
+      'div[class*="help-center"]'
+    ];
+    for (var i = 0; i < mainSels.length; i++) {
+      var mc = document.querySelector(mainSels[i]);
+      if (!mc || !mc.offsetParent) continue;
+      var rm = mc.getBoundingClientRect();
+      /* Deve começar entre 150 px e 60 % do viewport */
+      if (rm.left >= 150 && rm.left <= vpW * 0.6) {
+        log('getSidebarWidth[1]', mainSels[i], '=', Math.round(rm.left));
+        return Math.round(rm.left);
+      }
+    }
+
+    /*
+     * Estratégia 2: subir a partir de #crm-sidebar-group até encontrar
+     * o container que encosta na borda esquerda E tem ≥ 200 px de largura.
+     * Aumentado de 14 para 20 iterações e threshold de right ≥ 200.
      */
     var group = document.getElementById('crm-sidebar-group');
     if (group) {
       var node = group;
-      for (var i = 0; i < 14; i++) {
+      for (var s = 0; s < 20; s++) {
         var p = node.parentElement;
-        if (!p || p === document.body) break;
-        var r = p.getBoundingClientRect();
-        if (r.left <= 4 && r.right > 80 && r.right < window.innerWidth * 0.45) {
-          return Math.round(r.right);
+        if (!p || p === document.body || p === document.documentElement) break;
+        var rp = p.getBoundingClientRect();
+        if (rp.left <= 4 && rp.right >= 200 && rp.right <= vpW * 0.55 && rp.height > 200) {
+          log('getSidebarWidth[2] walk-up =', Math.round(rp.right));
+          return Math.round(rp.right);
         }
         node = p;
       }
     }
-    /* Fallback: seletores específicos — sem 'aside' genérico */
-    var candidates = ['.woot-sidebar', 'aside.woot-sidebar', 'nav.woot-sidebar'];
-    for (var j = 0; j < candidates.length; j++) {
-      var el = document.querySelector(candidates[j]);
-      if (el && el.offsetWidth > 80 && el.offsetWidth < window.innerWidth * 0.45) {
-        return el.offsetWidth;
+
+    /* Estratégia 3: seletores explícitos do Chatwoot */
+    var sbSels = [
+      '.woot-sidebar', 'aside.woot-sidebar', 'nav.woot-sidebar',
+      'aside[class*="sidebar"]', 'nav[class*="sidebar"]'
+    ];
+    for (var j = 0; j < sbSels.length; j++) {
+      var sb = document.querySelector(sbSels[j]);
+      if (!sb || !sb.offsetParent) continue;
+      var rs = sb.getBoundingClientRect();
+      if (rs.left <= 4 && rs.right >= 200 && rs.right <= vpW * 0.55) {
+        log('getSidebarWidth[3]', sbSels[j], '=', Math.round(rs.right));
+        return Math.round(rs.right);
       }
     }
+
+    log('getSidebarWidth: fallback 292');
     return 292;
   }
 
@@ -256,39 +304,108 @@
   }
 
   /*
-   * Extrai dados do contato a partir de links /contacts/ID no painel direito.
-   * Muito mais confiável do que query em h1 (que pega "Conversas" do Chatwoot).
+   * Extrai dados do contato a partir do DOM do Chatwoot.
+   * Nome: múltiplas estratégias pois o Chatwoot pode exibir o nome em elemento
+   * que NÃO é o <a href="/contacts/ID"> (o link costuma ser um ícone ↗).
    */
   function extractContactFromDOM() {
     var result = { name: '', contactId: null, email: '', phone: '' };
+    var vpW = window.innerWidth;
 
-    /* Link /contacts/ID — preferencialmente no painel direito (> 50% viewport) */
+    /* ── Telefone ── */
+    var phoneEl = document.querySelector('[href^="tel:"]');
+    if (phoneEl) result.phone = (phoneEl.textContent || '').trim().replace(/[^\d+]/g, '');
+
+    /* ── E-mail ── */
+    var emailEl = document.querySelector('[href^="mailto:"]');
+    if (emailEl) result.email = (emailEl.textContent || '').trim() ||
+                                 (emailEl.href || '').replace('mailto:', '');
+
+    /* ── ID do contato + nome via texto do link ── */
     var links = document.querySelectorAll('a[href*="/contacts/"]');
-    var best = null;
+    var bestLink = null, bestLeft = -1;
     for (var i = 0; i < links.length; i++) {
-      var link = links[i];
-      if (!link.offsetParent) continue;
-      var txt = link.textContent.trim();
-      if (!txt || txt.length < 2) continue;
-      var href = link.getAttribute('href') || '';
+      var lk = links[i];
+      if (!lk.offsetParent) continue;
+      var href = lk.getAttribute('href') || '';
       var idM  = href.match(/\/contacts\/(\d+)/);
-      var rect = link.getBoundingClientRect();
-      var score = (rect.left > window.innerWidth * 0.5) ? 10 : 1;
-      if (!best || score > best.score) {
-        best = { name: txt, contactId: idM ? idM[1] : null, score: score };
+      if (!idM) continue;
+      var lr = lk.getBoundingClientRect();
+      if (lr.left > bestLeft) { bestLeft = lr.left; bestLink = { el: lk, id: idM[1] }; }
+    }
+    if (bestLink) {
+      result.contactId = bestLink.id;
+      var lkTxt = (bestLink.el.textContent || '').trim();
+      /* Só usa o texto do link como nome se for uma string real, não um ícone */
+      if (lkTxt.length >= 2 && lkTxt.length <= 80 && /[a-zA-ZÀ-ÿ]{2,}/.test(lkTxt) && !lkTxt.includes('@')) {
+        result.name = lkTxt;
       }
     }
-    if (best) {
-      result.name      = best.name;
-      result.contactId = best.contactId;
+
+    /* ── Nome: escaneamento DOM próximo ao tel:/mailto: ── */
+    if (!result.name) {
+      var anchor = phoneEl || emailEl;
+      if (anchor && anchor.offsetParent) {
+        var anchorRect = anchor.getBoundingClientRect();
+        var SKIP = /^(conversas?|contacts?|contatos?|settings?|config|crm|kanban|reports?|campanhas?|ajuda|help|agenda|participants?|participantes?)$/i;
+        var node = anchor.parentElement;
+        var depth = 0;
+
+        while (node && node !== document.body && depth < 14) {
+          var candidates = node.querySelectorAll(
+            'h1,h2,h3,h4,h5,span,strong,b,p,' +
+            '[class*="name"],[class*="contact"],[class*="title"]'
+          );
+          var bestName = '', bestTop = -Infinity;
+
+          for (var k = 0; k < candidates.length; k++) {
+            var ce = candidates[k];
+            if (!ce.offsetParent) continue;
+            /* Pula containers com muitos filhos */
+            if (ce.children.length > 3) continue;
+            var cTxt = (ce.textContent || '').trim();
+            var cRect = ce.getBoundingClientRect();
+
+            if (
+              cTxt.length < 2 || cTxt.length > 80 ||
+              !(/[a-zA-ZÀ-ÿ]{2,}/.test(cTxt)) ||
+              cTxt.includes('@') ||
+              /^[\+\d\s\-\(\)\.]+$/.test(cTxt) ||   /* só números/telefone */
+              cRect.left < vpW * 0.35 ||              /* deve estar no painel direito */
+              cRect.top > anchorRect.top + 30         /* não pode ser muito abaixo */
+            ) continue;
+            if (SKIP.test(cTxt.trim())) continue;
+
+            /* Prefere o elemento mais próximo (abaixo) do topo, mas acima do anchor */
+            if (cRect.top > bestTop) { bestTop = cRect.top; bestName = cTxt; }
+          }
+
+          if (bestName) { result.name = bestName; break; }
+          node = node.parentElement;
+          depth++;
+        }
+      }
     }
 
-    /* Email e telefone via links mailto: e tel: */
-    var emailEl = document.querySelector('[href^="mailto:"]');
-    if (emailEl) result.email = emailEl.textContent.trim() || emailEl.href.replace('mailto:', '');
-    var phoneEl = document.querySelector('[href^="tel:"]');
-    if (phoneEl) result.phone = phoneEl.textContent.trim().replace(/[^\d+]/g, '');
+    /* ── Nome: fallback via seletores de classe do Chatwoot ── */
+    if (!result.name) {
+      var classSels = [
+        '[class*="contact-name"]', '[class*="contactName"]',
+        '[class*="contact--name"]', '[class*="contact_name"]',
+        '[class*="conversation--contact"]'
+      ];
+      for (var cs = 0; cs < classSels.length; cs++) {
+        var cEl = document.querySelector(classSels[cs]);
+        if (!cEl || !cEl.offsetParent) continue;
+        var cT = (cEl.textContent || '').trim();
+        if (cT.length >= 2 && cT.length <= 80 && /[a-zA-ZÀ-ÿ]{2,}/.test(cT)) {
+          result.name = cT;
+          break;
+        }
+      }
+    }
 
+    log('contact extracted:', JSON.stringify(result));
     return result;
   }
 
@@ -861,7 +978,7 @@
   });
 
   function boot() {
-    log('iniciando v4.0');
+    log('iniciando v4.2');
     injectStyles();
     ensurePanel();
     injectSidebar();

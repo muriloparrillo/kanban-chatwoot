@@ -2,6 +2,7 @@ class Lead < ApplicationRecord
   belongs_to :account
   belongs_to :funnel
   belongs_to :stage
+  belongs_to :product, optional: true
 
   has_many :notes,        class_name: 'LeadNote',       dependent: :destroy
   has_many :attachments,  class_name: 'LeadAttachment', dependent: :destroy

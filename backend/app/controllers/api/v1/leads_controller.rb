@@ -105,7 +105,7 @@ module Api
           :title, :description, :value, :currency,
           :contact_name, :contact_email, :contact_phone,
           :chatwoot_contact_id, :chatwoot_conversation_id, :chatwoot_inbox_name,
-          :due_at, :priority, :stage_id, :funnel_id,
+          :due_at, :priority, :stage_id, :funnel_id, :product_id,
           custom_fields: {}
         )
       end
@@ -124,6 +124,8 @@ module Api
           priority: l.priority, due_at: l.due_at, last_activity_at: l.last_activity_at,
           moved_to_stage_at: l.moved_to_stage_at, source: l.source,
           tag_ids: l.tag_ids, custom_fields: l.custom_fields,
+          product: l.product && { id: l.product.id, name: l.product.name, value: l.product.value, currency: l.product.currency },
+          product_id: l.product_id,
           created_at: l.created_at, updated_at: l.updated_at
         }
         if detailed

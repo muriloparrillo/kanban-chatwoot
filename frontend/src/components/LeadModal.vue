@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { LeadsAPI, TagsAPI } from '../services/api';
+import { LeadsAPI, TagsAPI, ProductsAPI } from '../services/api';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -13,6 +13,7 @@ const history     = ref([]);
 const attachments = ref([]);
 const tags        = ref([]);
 const allTags     = ref([]);
+const allProducts = ref([]);
 const newNote     = ref('');
 const newTagId    = ref('');
 const newTagName  = ref('');
@@ -21,9 +22,10 @@ const activeTab   = ref('notes');
 const saving      = ref(false);
 
 const load = async () => {
-  const [{ data }, tagsRes] = await Promise.all([
+  const [{ data }, tagsRes, productsRes] = await Promise.all([
     LeadsAPI.get(props.lead.id),
-    TagsAPI.list()
+    TagsAPI.list(),
+    ProductsAPI.list()
   ]);
   detail.value = data;
   notes.value = data.notes || [];
@@ -33,6 +35,7 @@ const load = async () => {
     ? tagsRes.data.filter(t => data.tag_ids.includes(t.id))
     : [];
   allTags.value = tagsRes.data;
+  allProducts.value = productsRes.data;
 };
 
 onMounted(load);
@@ -46,6 +49,7 @@ const save = async () => {
       value:         detail.value.value,
       priority:      detail.value.priority,
       due_at:        detail.value.due_at,
+      product_id:    detail.value.product_id || null,
       contact_name:  detail.value.contact?.name,
       contact_email: detail.value.contact?.email,
       contact_phone: detail.value.contact?.phone,
@@ -53,6 +57,16 @@ const save = async () => {
     emit('updated');
   } finally {
     saving.value = false;
+  }
+};
+
+/* When a product is selected, pre-fill value if it has a default */
+const onProductChange = () => {
+  const pid = detail.value.product_id;
+  if (!pid) return;
+  const prod = allProducts.value.find(p => p.id === Number(pid));
+  if (prod && prod.value != null && !detail.value.value) {
+    detail.value.value = prod.value;
   }
 };
 
@@ -198,14 +212,39 @@ const ensureContact = () => {
             </select>
           </div>
 
-          <!-- Produto / Serviço desejado -->
+          <!-- Produto / Serviço -->
           <div>
-            <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Produto / Serviço</label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Produto / Serviço</label>
+              <RouterLink
+                to="/settings/products"
+                class="text-xs text-brand hover:underline"
+                title="Gerenciar produtos">
+                + Gerenciar
+              </RouterLink>
+            </div>
+            <select
+              v-model="detail.product_id"
+              @change="onProductChange"
+              class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
+              <option :value="null">— Sem produto —</option>
+              <option
+                v-for="p in allProducts"
+                :key="p.id"
+                :value="p.id">
+                {{ p.name }}{{ p.value != null ? ' (' + p.currency + ' ' + Number(p.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ')' : '' }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Observações internas -->
+          <div>
+            <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Observações</label>
             <textarea
               v-model="detail.description"
               rows="3"
               class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 resize-none"
-              placeholder="Descreva o produto ou serviço…"></textarea>
+              placeholder="Notas rápidas sobre o lead…"></textarea>
           </div>
 
           <!-- Vencimento -->

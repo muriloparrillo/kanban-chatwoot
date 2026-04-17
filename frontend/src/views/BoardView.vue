@@ -19,6 +19,28 @@ const { stages, filteredLeadsByStage, loading, error, currentFunnelId, funnels }
 const activeLead = ref(null);
 const activeView = ref('kanban'); // 'kanban' | 'list'
 
+/* ── Stats ── */
+const statsLeads = computed(() => {
+  let count = 0;
+  for (const stageId of Object.keys(filteredLeadsByStage.value)) {
+    count += (filteredLeadsByStage.value[stageId] || []).length;
+  }
+  return count;
+});
+
+const statsValue = computed(() => {
+  let total = 0;
+  for (const stageId of Object.keys(filteredLeadsByStage.value)) {
+    for (const lead of (filteredLeadsByStage.value[stageId] || [])) {
+      if (lead.value) total += Number(lead.value);
+    }
+  }
+  return total;
+});
+
+const fmtCurrency = (v) =>
+  'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 onMounted(async () => {
   await store.loadFunnels();
   const requestedId = routeInfo.params.funnelId ? Number(routeInfo.params.funnelId) : null;
@@ -98,6 +120,21 @@ const closeLead = () => { activeLead.value = null; };
 
         <!-- Espaçador -->
         <div class="flex-1"></div>
+
+        <!-- Stats bar -->
+        <div v-if="!loading && stages.length" class="flex items-center gap-4 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-brand/70"></span>
+            <span class="text-slate-500">Total de Leads</span>
+            <span class="font-semibold text-slate-700">{{ statsLeads }}</span>
+          </div>
+          <div class="w-px h-4 bg-slate-200"></div>
+          <div class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500/70"></span>
+            <span class="text-slate-500">Oportunidades</span>
+            <span class="font-semibold text-emerald-700">{{ fmtCurrency(statsValue) }}</span>
+          </div>
+        </div>
 
         <!-- Filtros + novo lead -->
         <BoardFilters />

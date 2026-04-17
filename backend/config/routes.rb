@@ -52,6 +52,9 @@ Rails.application.routes.draw do
       # Tags (global, per account)
       resources :tags, only: %i[index create update destroy]
 
+      # Products / Services catalog
+      resources :products, only: %i[index create update destroy]
+
       # Agents (mirrored from Chatwoot)
       resources :agents, only: %i[index]
     end
