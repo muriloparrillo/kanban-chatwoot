@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { LeadsAPI, TagsAPI, ProductsAPI, AccountsAPI, FunnelsAPI } from '../services/api';
-import { format } from 'date-fns';
+import { LeadsAPI, TagsAPI, ProductsAPI, AccountsAPI, FunnelsAPI, TasksAPI } from '../services/api';
+import { format, parseISO, isToday, isPast } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 const props = defineProps({ lead: { type: Object, required: true } });
@@ -19,7 +19,7 @@ const newNote     = ref('');
 const newTagId    = ref('');
 const newTagName  = ref('');
 const fileInput   = ref(null);
-const activeTab   = ref('notes');
+const activeTab   = ref('tasks');
 const saving      = ref(false);
 const syncingTags = ref(false);
 const syncTagsErr = ref('');
@@ -66,6 +66,8 @@ const load = async () => {
     moveStages.value = currentFunnel?.stages || [];
     moveStageId.value = data.stage_id;
   }
+
+  await loadTasks();
 };
 
 onMounted(load);
@@ -215,6 +217,66 @@ const syncLabels = async () => {
   } finally {
     syncingTags.value = false;
   }
+};
+
+/* ── Tarefas do lead ── */
+const tasks        = ref([]);
+const taskSaving   = ref(false);
+const taskForm     = ref({ title: '', priority: 'medium', due_at: '' });
+const taskFormErr  = ref('');
+const taskFormOpen = ref(false);
+
+const loadTasks = async () => {
+  try {
+    const { data } = await TasksAPI.list({ lead_id: props.lead.id });
+    tasks.value = data;
+  } catch { /* silencioso */ }
+};
+
+const submitTask = async () => {
+  if (!taskForm.value.title.trim()) { taskFormErr.value = 'Título obrigatório.'; return; }
+  taskSaving.value = true;
+  taskFormErr.value = '';
+  try {
+    await TasksAPI.create({
+      title:    taskForm.value.title.trim(),
+      priority: taskForm.value.priority,
+      due_at:   taskForm.value.due_at || null,
+      lead_id:  props.lead.id
+    });
+    taskForm.value = { title: '', priority: 'medium', due_at: '' };
+    taskFormOpen.value = false;
+    await loadTasks();
+  } catch (e) {
+    taskFormErr.value = e?.response?.data?.errors?.join(', ') || 'Erro ao salvar.';
+  } finally { taskSaving.value = false; }
+};
+
+const toggleTask = async (t) => {
+  try {
+    await TasksAPI.update(t.id, { status: t.status === 'done' ? 'pending' : 'done' });
+    await loadTasks();
+  } catch { /* silencioso */ }
+};
+
+const destroyTask = async (t) => {
+  if (!confirm(`Excluir "${t.title}"?`)) return;
+  try { await TasksAPI.destroy(t.id); await loadTasks(); } catch { /* silencioso */ }
+};
+
+const taskPriorityClass = (p) => ({
+  high:   'bg-red-100 text-red-700',
+  medium: 'bg-amber-100 text-amber-700',
+  low:    'bg-slate-100 text-slate-500'
+}[p] || '');
+
+const taskPriorityLabel = (p) => ({ high: 'Alta', medium: 'Média', low: 'Baixa' }[p] || p);
+
+const fmtTaskDate = (d) => {
+  if (!d) return null;
+  const dt = parseISO(d);
+  if (isToday(dt)) return 'Hoje ' + format(dt, 'HH:mm');
+  return format(dt, "dd/MM/yy HH:mm", { locale: ptBR });
 };
 
 const formatDate = (d) =>
@@ -421,6 +483,7 @@ const billingLabel = (t) => t === 'recurring' ? 'Recorrente' : 'Único';
           <div class="flex border-b border-slate-200 text-sm bg-slate-50">
             <button
               v-for="tab in [
+                { id: 'tasks',       label: 'Tarefas',  count: tasks.length },
                 { id: 'notes',       label: 'Notas',    count: notes.length },
                 { id: 'attachments', label: 'Anexos',   count: attachments.length },
                 { id: 'tags',        label: 'Tags',     count: tags.length },
@@ -437,6 +500,88 @@ const billingLabel = (t) => t === 'recurring' ? 'Recorrente' : 'Único';
           </div>
 
           <div class="flex-1 overflow-y-auto p-4 scroll-thin">
+
+            <!-- Tarefas -->
+            <div v-if="activeTab === 'tasks'">
+              <!-- Botão nova tarefa -->
+              <div class="mb-3">
+                <button v-if="!taskFormOpen" @click="taskFormOpen = true"
+                  class="flex items-center gap-1.5 text-sm text-brand hover:underline font-medium">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Nova tarefa
+                </button>
+                <!-- Form inline -->
+                <div v-else class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                  <input v-model="taskForm.title" placeholder="Título da tarefa…" autofocus
+                    class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
+                    @keydown.enter="submitTask" @keydown.escape="taskFormOpen = false" />
+                  <div class="flex gap-2">
+                    <select v-model="taskForm.priority"
+                      class="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand/30">
+                      <option value="high">Alta</option>
+                      <option value="medium">Média</option>
+                      <option value="low">Baixa</option>
+                    </select>
+                    <input v-model="taskForm.due_at" type="datetime-local"
+                      class="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  </div>
+                  <p v-if="taskFormErr" class="text-red-600 text-xs">{{ taskFormErr }}</p>
+                  <div class="flex gap-2">
+                    <button @click="submitTask" :disabled="taskSaving"
+                      class="px-3 py-1.5 bg-brand text-white rounded-lg text-xs font-medium disabled:opacity-60">
+                      {{ taskSaving ? 'Salvando…' : 'Salvar' }}
+                    </button>
+                    <button @click="taskFormOpen = false; taskFormErr = ''"
+                      class="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-white">
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Lista de tarefas -->
+              <div v-if="tasks.length" class="space-y-1.5">
+                <div v-for="t in tasks" :key="t.id"
+                  :class="[
+                    'flex items-start gap-2.5 px-3 py-2.5 rounded-xl border transition-colors',
+                    t.overdue && t.status === 'pending' ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white'
+                  ]">
+                  <!-- Checkbox -->
+                  <button @click="toggleTask(t)"
+                    :class="[
+                      'mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors',
+                      t.status === 'done' ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 hover:border-brand'
+                    ]">
+                    <svg v-if="t.status === 'done'" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  </button>
+                  <!-- Conteúdo -->
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span :class="['text-sm font-medium', t.status === 'done' ? 'line-through text-slate-400' : 'text-slate-700']">
+                        {{ t.title }}
+                      </span>
+                      <span class="text-xs px-1.5 py-0.5 rounded-full font-medium" :class="taskPriorityClass(t.priority)">
+                        {{ taskPriorityLabel(t.priority) }}
+                      </span>
+                    </div>
+                    <div v-if="t.due_at" class="text-xs mt-0.5"
+                      :class="t.overdue && t.status === 'pending' ? 'text-red-600 font-medium' : 'text-slate-400'">
+                      📅 {{ fmtTaskDate(t.due_at) }}{{ t.overdue && t.status === 'pending' ? ' · Atrasada' : '' }}
+                    </div>
+                  </div>
+                  <!-- Excluir -->
+                  <button @click="destroyTask(t)" class="p-1 rounded hover:bg-red-50 text-slate-300 hover:text-red-400 flex-shrink-0 mt-0.5">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div v-else-if="!taskFormOpen" class="text-center py-8 text-slate-400 text-sm">
+                <div class="text-2xl mb-2">✅</div>
+                Nenhuma tarefa para este lead
+              </div>
+            </div>
 
             <!-- Notas -->
             <div v-if="activeTab === 'notes'">
