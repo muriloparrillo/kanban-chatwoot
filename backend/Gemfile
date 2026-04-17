@@ -20,6 +20,7 @@ gem 'faraday-retry'
 
 # Background jobs
 gem 'sidekiq', '~> 7.2'
+gem 'sidekiq-cron', '~> 1.12'
 gem 'redis', '~> 5.0'
 
 # Storage (attachments)

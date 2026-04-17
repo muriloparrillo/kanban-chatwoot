@@ -13,17 +13,20 @@ class SendSingleScheduledMessageJob
 
     unless conv_id
       sm.update!(status: 'failed', error_message: 'conversation_id ausente')
+      Rails.logger.warn "[CRM] ScheduledMessage ##{sm.id} falhou: sem conversation_id"
       return
     end
 
     begin
       client = account.chatwoot_client
-      # Envia mensagem via API do Chatwoot
       client.send_message(conv_id, sm.message)
       sm.update!(status: 'sent', sent_at: Time.current)
+      Rails.logger.info "[CRM] ScheduledMessage ##{sm.id} enviada para conv #{conv_id} (account #{account.id})"
     rescue => e
-      sm.update!(status: 'failed', error_message: e.message.truncate(500))
-      raise # re-raise para Sidekiq retry
+      error_msg = e.message.truncate(500)
+      sm.update!(status: 'failed', error_message: error_msg)
+      Rails.logger.error "[CRM] ScheduledMessage ##{sm.id} falhou (account #{account.id}): #{error_msg}"
+      raise # re-raise para Sidekiq retry (max 2x)
     end
   end
 end
