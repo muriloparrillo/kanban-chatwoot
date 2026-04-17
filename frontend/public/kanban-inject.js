@@ -159,12 +159,33 @@
    * PAINEL BOARD (iframe)
    * ═══════════════════════════════════════════════════════════════════════ */
   function getSidebarWidth() {
-    var sel = ['.woot-sidebar', 'aside.woot-sidebar', 'nav.woot-sidebar', 'aside'];
-    for (var i = 0; i < sel.length; i++) {
-      var el = document.querySelector(sel[i]);
-      if (el && el.offsetWidth > 80) return el.offsetWidth;
+    /*
+     * Estratégia primária: subir a partir de #crm-sidebar-group
+     * até encontrar o container que esteja encostado na borda esquerda
+     * E seja estreito (< 45% do viewport) — exclui o painel direito.
+     */
+    var group = document.getElementById('crm-sidebar-group');
+    if (group) {
+      var node = group;
+      for (var i = 0; i < 14; i++) {
+        var p = node.parentElement;
+        if (!p || p === document.body) break;
+        var r = p.getBoundingClientRect();
+        if (r.left <= 4 && r.right > 80 && r.right < window.innerWidth * 0.45) {
+          return Math.round(r.right);
+        }
+        node = p;
+      }
     }
-    return 292; /* default Chatwoot */
+    /* Fallback: seletores específicos — sem 'aside' genérico */
+    var candidates = ['.woot-sidebar', 'aside.woot-sidebar', 'nav.woot-sidebar'];
+    for (var j = 0; j < candidates.length; j++) {
+      var el = document.querySelector(candidates[j]);
+      if (el && el.offsetWidth > 80 && el.offsetWidth < window.innerWidth * 0.45) {
+        return el.offsetWidth;
+      }
+    }
+    return 292;
   }
 
   function ensurePanel() {
@@ -234,18 +255,51 @@
     .catch(function() { cb([]); });
   }
 
+  /*
+   * Extrai dados do contato a partir de links /contacts/ID no painel direito.
+   * Muito mais confiável do que query em h1 (que pega "Conversas" do Chatwoot).
+   */
+  function extractContactFromDOM() {
+    var result = { name: '', contactId: null, email: '', phone: '' };
+
+    /* Link /contacts/ID — preferencialmente no painel direito (> 50% viewport) */
+    var links = document.querySelectorAll('a[href*="/contacts/"]');
+    var best = null;
+    for (var i = 0; i < links.length; i++) {
+      var link = links[i];
+      if (!link.offsetParent) continue;
+      var txt = link.textContent.trim();
+      if (!txt || txt.length < 2) continue;
+      var href = link.getAttribute('href') || '';
+      var idM  = href.match(/\/contacts\/(\d+)/);
+      var rect = link.getBoundingClientRect();
+      var score = (rect.left > window.innerWidth * 0.5) ? 10 : 1;
+      if (!best || score > best.score) {
+        best = { name: txt, contactId: idM ? idM[1] : null, score: score };
+      }
+    }
+    if (best) {
+      result.name      = best.name;
+      result.contactId = best.contactId;
+    }
+
+    /* Email e telefone via links mailto: e tel: */
+    var emailEl = document.querySelector('[href^="mailto:"]');
+    if (emailEl) result.email = emailEl.textContent.trim() || emailEl.href.replace('mailto:', '');
+    var phoneEl = document.querySelector('[href^="tel:"]');
+    if (phoneEl) result.phone = phoneEl.textContent.trim().replace(/[^\d+]/g, '');
+
+    return result;
+  }
+
   function createLeadForConversation(funnelId, stageId, cb) {
     var url = window.location.href;
     var cm  = url.match(/\/conversations\/(\d+)/);
-    var ct  = url.match(/\/contacts\/(\d+)/);
     var conversationId = cm ? cm[1] : null;
-    var contactId      = ct ? ct[1] : null;
 
-    /* Tenta extrair nome do contato do DOM */
-    var nameEl = document.querySelector('h1') ||
-                 document.querySelector('[class*="contact-name"]') ||
-                 document.querySelector('[class*="username"]');
-    var name = (nameEl ? nameEl.textContent.trim() : '') || 'Lead via Chatwoot';
+    var contact = extractContactFromDOM();
+    var name    = contact.name || 'Lead via Chatwoot';
+    var contactId = contact.contactId;
 
     fetch(KANBAN_URL + '/api/v1/leads', {
       method: 'POST',
@@ -258,6 +312,9 @@
           funnel_id: Number(funnelId),
           stage_id: Number(stageId),
           title: name,
+          contact_name:  contact.name  || null,
+          contact_email: contact.email || null,
+          contact_phone: contact.phone || null,
           chatwoot_conversation_id: conversationId ? Number(conversationId) : null,
           chatwoot_contact_id: contactId ? Number(contactId) : null,
           source: 'manual'
@@ -603,7 +660,7 @@
     document.getElementById('crm-opt-funil').addEventListener('click', renderFunnelPicker);
   }
 
-  /* ── Picker de funis ── */
+  /* ── Picker de funis (com check de duplicidade) ── */
   function renderFunnelPicker() {
     setModalHeader(
       '<button class="crm-modal-back-btn" id="crm-modal-back">\u2039 Voltar</button>'
@@ -613,39 +670,78 @@
     var body = document.getElementById('crm-modal-body');
     if (!body) return;
     body.innerHTML =
-      '<div class="crm-picker-title">Selecione um funil:</div>' +
       '<div id="crm-funnel-items">' +
-        '<div style="color:#9babb4;font-size:13px;padding:8px">Carregando...</div>' +
+        '<div style="color:#9babb4;font-size:13px;padding:8px">Verificando...</div>' +
       '</div>';
 
-    fetchFunnels(function(funnels) {
+    /* Verifica se já existe lead para esta conversa */
+    var url = window.location.href;
+    var cm  = url.match(/\/conversations\/(\d+)/);
+    var conversationId = cm ? cm[1] : null;
+
+    function renderFunnelList(existingLead) {
       var container = document.getElementById('crm-funnel-items');
       if (!container) return;
-      if (!funnels.length) {
-        container.innerHTML = '<div style="color:#9babb4;font-size:13px;padding:8px">Nenhum funil encontrado</div>';
-        return;
+
+      var html = '';
+
+      /* Mostra lead existente (se houver) */
+      if (existingLead) {
+        html +=
+          '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:12px">' +
+            '<div style="font-size:11px;color:#1d4ed8;font-weight:600;margin-bottom:2px">JÁ ASSOCIADO</div>' +
+            '<div style="font-size:13px;color:#1e3a5f;font-weight:500">' + (existingLead.title || 'Lead') + '</div>' +
+            '<div style="font-size:11px;color:#3b82f6;margin-top:2px">Etapa: ' + (existingLead.stage_name || '—') + '</div>' +
+          '</div>' +
+          '<div class="crm-picker-title" style="margin-top:8px">Mover para outro funil:</div>';
+      } else {
+        html += '<div class="crm-picker-title">Selecione um funil:</div>';
       }
-      container.innerHTML = '';
-      funnels.forEach(function(f) {
-        var btn = document.createElement('button');
-        btn.className = 'crm-picker-item';
-        btn.innerHTML =
-          '<span style="width:10px;height:10px;border-radius:50%;background:' + (f.color || '#1f93ff') + ';flex-shrink:0"></span>' +
-          '<span class="crm-picker-name">' + (f.name || 'Funil') + '</span>' +
-          '<span class="crm-picker-meta">' + (f.stages_count !== undefined ? f.stages_count + ' etapas' : '') + '</span>' +
-          '<span class="crm-opt-arrow">\u203A</span>';
-        btn.addEventListener('click', function() { renderStagePicker(f); });
-        container.appendChild(btn);
+
+      container.innerHTML = html + '<div id="crm-funnel-list-inner"><div style="color:#9babb4;font-size:13px;padding:8px">Carregando...</div></div>';
+
+      fetchFunnels(function(funnels) {
+        var inner = document.getElementById('crm-funnel-list-inner');
+        if (!inner) return;
+        if (!funnels.length) {
+          inner.innerHTML = '<div style="color:#9babb4;font-size:13px;padding:8px">Nenhum funil encontrado</div>';
+          return;
+        }
+        inner.innerHTML = '';
+        funnels.forEach(function(f) {
+          var btn = document.createElement('button');
+          btn.className = 'crm-picker-item';
+          btn.innerHTML =
+            '<span style="width:10px;height:10px;border-radius:50%;background:' + (f.color || '#1f93ff') + ';flex-shrink:0"></span>' +
+            '<span class="crm-picker-name">' + (f.name || 'Funil') + '</span>' +
+            '<span class="crm-picker-meta">' + (f.stages_count !== undefined ? f.stages_count + ' etapas' : '') + '</span>' +
+            '<span class="crm-opt-arrow">\u203A</span>';
+          btn.addEventListener('click', function() { renderStagePicker(f, existingLead); });
+          inner.appendChild(btn);
+        });
       });
-    });
+    }
+
+    if (conversationId) {
+      fetch(KANBAN_URL + '/api/v1/leads?conversation_id=' + conversationId, {
+        headers: { 'X-Account-Token': ACCOUNT_TOKEN }
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(leads) {
+        renderFunnelList(Array.isArray(leads) && leads.length ? leads[0] : null);
+      })
+      .catch(function() { renderFunnelList(null); });
+    } else {
+      renderFunnelList(null);
+    }
   }
 
   /* ── Picker de etapas ── */
-  function renderStagePicker(funnel) {
+  function renderStagePicker(funnel, existingLead) {
     setModalHeader(
       '<button class="crm-modal-back-btn" id="crm-modal-back">\u2039 Voltar</button>'
     );
-    document.getElementById('crm-modal-back').addEventListener('click', renderFunnelPicker);
+    document.getElementById('crm-modal-back').addEventListener('click', function() { renderFunnelPicker(); });
 
     var body = document.getElementById('crm-modal-body');
     if (!body) return;
@@ -670,14 +766,14 @@
           '<span style="width:10px;height:10px;border-radius:50%;background:' + (stage.color || '#1f93ff') + ';flex-shrink:0"></span>' +
           '<span class="crm-picker-name">' + (stage.name || 'Etapa') + '</span>' +
           '<span class="crm-opt-arrow">\u203A</span>';
-        btn.addEventListener('click', function() { doAssociate(funnel, stage, btn); });
+        btn.addEventListener('click', (function(s) { return function() { doAssociate(funnel, s, this, existingLead); }; })(stage));
         container.appendChild(btn);
       });
     });
   }
 
-  /* ── Criar lead ── */
-  function doAssociate(funnel, stage, btn) {
+  /* ── Criar/mover lead ── */
+  function doAssociate(funnel, stage, btn, existingLead) {
     btn.disabled = true;
     btn.style.opacity = '.5';
 
@@ -753,6 +849,16 @@
     injectSidebar();
     if (retryCount >= MAX_RETRIES) clearInterval(sidebarInterval);
   }, 500);
+
+  /* ── postMessage: iframe pede para abrir uma conversa ── */
+  window.addEventListener('message', function(e) {
+    if (!e.data || e.data.type !== 'crm-open-conversation') return;
+    var convId = e.data.conversationId;
+    if (!convId) return;
+    var accountMatch = window.location.href.match(/\/accounts\/(\d+)/);
+    var accountId = accountMatch ? accountMatch[1] : '1';
+    window.location.href = '/app/accounts/' + accountId + '/conversations/' + convId;
+  });
 
   function boot() {
     log('iniciando v4.0');

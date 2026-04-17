@@ -10,6 +10,7 @@ module Api
         scope = scope.where(stage_id:  params[:stage_id])  if params[:stage_id].present?
         scope = scope.where(assignee_chatwoot_user_id: params[:assignee_id]) if params[:assignee_id].present?
         scope = scope.joins(:tags).where(tags: { id: params[:tag_id] })      if params[:tag_id].present?
+        scope = scope.where(chatwoot_conversation_id: params[:conversation_id]) if params[:conversation_id].present?
         scope = scope.search(params[:q]) if params[:q].present?
         scope = scope.order(:position)
         render json: scope.map { |l| serialize(l) }
