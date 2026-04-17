@@ -28,36 +28,39 @@ module Api
                         status: :unauthorized
         end
 
-        if cw_id.present?
-          # Tenta achar conta isolada para este Chatwoot account
-          @current_account = Account.find_by(account_token: token,
-                                             chatwoot_account_id: cw_id)
+        # Passo 1: valida a instalação pelo account_token
+        installation = Account.find_by(account_token: token)
 
-          # Não encontrou → auto-provisiona conta isolada copiando credenciais
-          # da conta-template (a que foi cadastrada com este token)
+        unless installation
+          return render json: { error: 'unauthorized', message: 'Invalid account token' },
+                        status: :unauthorized
+        end
+
+        if cw_id.present? && cw_id.to_s != installation.chatwoot_account_id.to_s
+          # Passo 2: cw_id diferente da conta-mestre → busca conta isolada pelo chatwoot_account_id
+          # (cada conta isolada tem seu próprio account_token único gerado na criação)
+          @current_account = Account.find_by(chatwoot_account_id: cw_id)
+
+          # Passo 3: não existe → auto-provisiona com credenciais da instalação
           unless @current_account
-            template = Account.find_by(account_token: token)
-            if template
-              begin
-                @current_account = Account.find_or_create_by!(chatwoot_account_id: cw_id) do |a|
-                  a.account_token             = token
-                  a.name                      = "Conta #{cw_id}"
-                  a.chatwoot_base_url         = template.chatwoot_base_url
-                  a.chatwoot_api_access_token = template.chatwoot_api_access_token
-                end
-              rescue => e
-                # Auto-provisioning falhou (validação, race condition, ou callback).
-                # Loga e usa a conta-template como fallback para não quebrar o request.
-                Rails.logger.error "[CRM] auto-provision falhou cw_id=#{cw_id}: #{e.message}"
-                @current_account = Account.find_by(account_token: token, chatwoot_account_id: cw_id)
-                @current_account ||= template
-              end
+            begin
+              @current_account = Account.create!(
+                chatwoot_account_id:        cw_id,
+                name:                       "Conta #{cw_id}",
+                chatwoot_base_url:          installation.chatwoot_base_url,
+                chatwoot_api_access_token:  installation.chatwoot_api_access_token
+                # account_token gerado automaticamente por ensure_tokens (único)
+              )
+            rescue => e
+              Rails.logger.error "[CRM] auto-provision falhou cw_id=#{cw_id}: #{e.message}"
+              # Tenta achar de novo (race condition: outra requisição criou antes)
+              @current_account = Account.find_by(chatwoot_account_id: cw_id)
             end
           end
         end
 
-        # Fallback: conta única (sem header cw_account_id)
-        @current_account ||= Account.find_by(account_token: token)
+        # Usa a instalação diretamente se cw_id bate ou não foi enviado
+        @current_account ||= installation
 
         return if @current_account
 
