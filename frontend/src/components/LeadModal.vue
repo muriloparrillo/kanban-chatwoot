@@ -22,20 +22,32 @@ const activeTab   = ref('notes');
 const saving      = ref(false);
 
 const load = async () => {
-  const [{ data }, tagsRes, productsRes] = await Promise.all([
+  // Promise.allSettled garante que uma falha (ex: products ainda sem migration)
+  // não impede o modal de abrir. Cada resultado é tratado individualmente.
+  const [leadRes, tagsRes, productsRes] = await Promise.allSettled([
     LeadsAPI.get(props.lead.id),
     TagsAPI.list(),
     ProductsAPI.list()
   ]);
+
+  if (leadRes.status !== 'fulfilled') {
+    console.error('[CRM] LeadModal: falha ao carregar lead', leadRes.reason);
+    return; // mantém detail=null → mostra loading com mensagem de erro
+  }
+
+  const data = leadRes.value.data;
   detail.value = data;
   notes.value = data.notes || [];
   history.value = data.histories || [];
   attachments.value = data.attachments || [];
+
+  const tagsData = tagsRes.status === 'fulfilled' ? tagsRes.value.data : [];
+  allTags.value = tagsData;
   tags.value = (data.tag_ids || []).length
-    ? tagsRes.data.filter(t => data.tag_ids.includes(t.id))
+    ? tagsData.filter(t => data.tag_ids.includes(t.id))
     : [];
-  allTags.value = tagsRes.data;
-  allProducts.value = productsRes.data;
+
+  allProducts.value = productsRes.status === 'fulfilled' ? productsRes.value.data : [];
 };
 
 onMounted(load);
@@ -413,8 +425,13 @@ const ensureContact = () => {
     </div>
 
     <!-- Loading skeleton -->
-    <div v-else class="bg-white rounded-xl w-[760px] p-8 text-center text-slate-400">
-      Carregando…
+    <div v-else class="bg-white rounded-xl w-[760px] p-8 text-center text-slate-400 flex flex-col items-center gap-3">
+      <svg class="animate-spin w-6 h-6 text-brand/60" viewBox="0 0 24 24" fill="none">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+      </svg>
+      <span>Carregando…</span>
+      <button @click="load" class="text-xs text-brand hover:underline mt-1">Tentar novamente</button>
     </div>
   </div>
 </template>

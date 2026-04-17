@@ -18,6 +18,21 @@
   if (window.__crmInjected) return;
   window.__crmInjected = true;
 
+  /* ─── HELPERS DE ISOLAMENTO ─────────────────────────────────────────── */
+  /* Extrai o ID da conta Chatwoot da URL atual (ex: /app/accounts/2/...) */
+  function getChatwootAccountId() {
+    var m = window.location.href.match(/\/accounts\/(\d+)/);
+    return m ? m[1] : null;
+  }
+
+  /* Cabeçalhos para todas as requests CRM — inclui X-Chatwoot-Account-Id */
+  function apiHeaders() {
+    var h = { 'X-Account-Token': ACCOUNT_TOKEN };
+    var cwId = getChatwootAccountId();
+    if (cwId) h['X-Chatwoot-Account-Id'] = cwId;
+    return h;
+  }
+
   /* ─── ESTADO ─────────────────────────────────────────────────────────── */
   var menuOpen       = true;
   var currentFunnelId = null;
@@ -46,19 +61,25 @@
     var s = document.createElement('style');
     s.id = 'crm-inject-style';
     s.textContent = [
-      /* ── painel board: default left=292px para não cobrir o sidebar ── */
-      '#crm-panel{position:fixed;top:0;bottom:0;right:0;left:292px;background:#fff;',
-      'z-index:9000;display:none;flex-direction:column;',
+      /*
+       * PAINEL BOARD — arquitetura pointer-events:
+       * #crm-panel    : cobre tela inteira, pointer-events:none → cliques passam pelo sidebar
+       * #crm-panel-content : área visível real, pointer-events:all, left dinâmico via JS
+       * Isso garante que o sidebar SEMPRE seja clicável mesmo se left for mal calculado.
+       */
+      '#crm-panel{position:fixed;inset:0;z-index:9000;display:none;pointer-events:none}',
+      '#crm-panel.crm-open{display:block}',
+      '#crm-panel-content{position:absolute;top:0;bottom:0;right:0;left:292px;',
+      'pointer-events:all;display:flex;flex-direction:column;background:#fff;',
       'box-shadow:-3px 0 12px rgba(0,0,0,.18)}',
-      '#crm-panel.crm-open{display:flex}',
-      '#crm-panel iframe{flex:1;width:100%;border:none}',
+      'html.dark #crm-panel-content{background:#1c2b33}',
+      '#crm-panel-content iframe{flex:1;width:100%;border:none}',
       '#crm-panel-bar{display:flex;align-items:center;justify-content:space-between;',
       'padding:6px 14px;min-height:40px;background:#f8f9fa;border-bottom:1px solid #e4e7ed}',
       '#crm-panel-bar span{font-size:13px;font-weight:600;color:#1c2b33}',
       '#crm-panel-close{background:none;border:none;cursor:pointer;padding:4px 8px;',
       'border-radius:6px;font-size:16px;color:#6b7280;line-height:1}',
       '#crm-panel-close:hover{background:#e4e7ed;color:#1c2b33}',
-      'html.dark #crm-panel{background:#1c2b33}',
       'html.dark #crm-panel-bar{background:#243641;border-color:#3a4a54}',
       'html.dark #crm-panel-bar span{color:#e5eef3}',
 
@@ -240,12 +261,19 @@
     if (panelEl || !document.body) return;
     panelEl = document.createElement('div');
     panelEl.id = 'crm-panel';
+    /*
+     * #crm-panel-content é o container VISÍVEL com pointer-events:all.
+     * O wrapper #crm-panel tem pointer-events:none e cobre a tela inteira,
+     * então cliques no sidebar passam por ele independente do left calculado.
+     */
     panelEl.innerHTML =
-      '<div id="crm-panel-bar">' +
-        '<span>\uD83D\uDCCB CRM \u2014 Kanban</span>' +
-        '<button id="crm-panel-close" title="Fechar (Esc)">\u2715</button>' +
-      '</div>' +
-      '<iframe id="crm-iframe" src="" allow="*" title="CRM Kanban"></iframe>';
+      '<div id="crm-panel-content">' +
+        '<div id="crm-panel-bar">' +
+          '<span>\uD83D\uDCCB CRM \u2014 Kanban</span>' +
+          '<button id="crm-panel-close" title="Fechar (Esc)">\u2715</button>' +
+        '</div>' +
+        '<iframe id="crm-iframe" src="" allow="*" title="CRM Kanban"></iframe>' +
+      '</div>';
     document.body.appendChild(panelEl);
     document.getElementById('crm-panel-close').addEventListener('click', closePanel);
     document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePanel(); });
@@ -253,13 +281,16 @@
 
   function openPanel(funnelId) {
     if (!panelEl) ensurePanel();
-    /* Sempre recalcula para garantir que não cobre o sidebar */
+    /* Seta left no #crm-panel-content (não no wrapper) */
     var w = getSidebarWidth();
-    panelEl.style.left = w + 'px';
+    var content = document.getElementById('crm-panel-content');
+    if (content) content.style.left = w + 'px';
 
     var iframe = document.getElementById('crm-iframe');
     if (!iframe) return;
+    var cwId = getChatwootAccountId();
     var url = KANBAN_URL + '/?account_token=' + ACCOUNT_TOKEN + '&embedded=true';
+    if (cwId) url += '&cw_account_id=' + cwId;
     if (funnelId) url += '#/board/' + funnelId;
     if (iframe.src !== url) iframe.src = url;
     currentFunnelId = funnelId || null;
@@ -280,7 +311,7 @@
   function fetchFunnels(cb) {
     if (funnelsCache.length) { cb(funnelsCache); return; }
     fetch(KANBAN_URL + '/api/v1/funnels', {
-      headers: { 'X-Account-Token': ACCOUNT_TOKEN }
+      headers: apiHeaders()
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
@@ -293,7 +324,7 @@
   function fetchStages(funnelId, cb) {
     if (stagesCache[funnelId]) { cb(stagesCache[funnelId]); return; }
     fetch(KANBAN_URL + '/api/v1/boards/' + funnelId, {
-      headers: { 'X-Account-Token': ACCOUNT_TOKEN }
+      headers: apiHeaders()
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
@@ -420,10 +451,7 @@
 
     fetch(KANBAN_URL + '/api/v1/leads', {
       method: 'POST',
-      headers: {
-        'X-Account-Token': ACCOUNT_TOKEN,
-        'Content-Type': 'application/json'
-      },
+      headers: Object.assign({}, apiHeaders(), { 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         lead: {
           funnel_id: Number(funnelId),
@@ -841,7 +869,7 @@
 
     if (conversationId) {
       fetch(KANBAN_URL + '/api/v1/leads?conversation_id=' + conversationId, {
-        headers: { 'X-Account-Token': ACCOUNT_TOKEN }
+        headers: apiHeaders()
       })
       .then(function(r) { return r.json(); })
       .then(function(leads) {

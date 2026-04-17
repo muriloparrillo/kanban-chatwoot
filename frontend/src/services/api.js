@@ -16,6 +16,17 @@ function readToken() {
   return localStorage.getItem('kanban_account_token') || '';
 }
 
+function readCwAccountId() {
+  // O inject script passa cw_account_id na URL do iframe para isolar dados por conta Chatwoot
+  const url = new URL(window.location.href);
+  const fromQuery = url.searchParams.get('cw_account_id');
+  if (fromQuery) {
+    localStorage.setItem('kanban_cw_account_id', fromQuery);
+    return fromQuery;
+  }
+  return localStorage.getItem('kanban_cw_account_id') || '';
+}
+
 function readChatwootUser() {
   // Chatwoot posts user context via postMessage. We store it when received.
   try {
@@ -35,6 +46,8 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = readToken();
   if (token) config.headers['X-Account-Token'] = token;
+  const cwId = readCwAccountId();
+  if (cwId) config.headers['X-Chatwoot-Account-Id'] = cwId;
   const user = readChatwootUser();
   if (user) {
     config.headers['X-Chatwoot-User-Id']   = user.id;

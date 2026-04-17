@@ -16,6 +16,19 @@ module Api
       def authenticate_account!
         token = request.headers['X-Account-Token'].presence || params[:account_token].presence
         @current_account = Account.find_by(account_token: token) if token.present?
+
+        # Isolamento por conta Chatwoot: se o header X-Chatwoot-Account-Id for enviado,
+        # valida que corresponde à conta CRM registrada para esse token.
+        # Impede que instâncias Chatwoot com múltiplas contas compartilhem dados.
+        cw_id = request.headers['X-Chatwoot-Account-Id'].presence
+        if cw_id.present? && @current_account &&
+           @current_account.chatwoot_account_id.to_s != cw_id.to_s
+          render json: { error: 'account_mismatch',
+                         message: 'Token does not belong to this Chatwoot account' },
+                 status: :forbidden
+          return
+        end
+
         return if @current_account
 
         render json: { error: 'unauthorized', message: 'Missing or invalid account token' }, status: :unauthorized
