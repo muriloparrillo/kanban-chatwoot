@@ -90,37 +90,6 @@ const closeLead = () => { activeLead.value = null; };
           @update:modelValue="(id) => route.push({ name: 'board-funnel', params: { funnelId: id } })"
         />
 
-        <!-- Tabs: Kanban / Lista / Agenda -->
-        <div class="flex items-center gap-0.5 border border-slate-200 rounded-lg p-0.5 bg-slate-50">
-          <button
-            @click="activeView = 'kanban'"
-            :class="[
-              'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-              activeView === 'kanban'
-                ? 'bg-white text-slate-800 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
-            ]">
-            Kanban
-          </button>
-          <button
-            @click="activeView = 'list'"
-            :class="[
-              'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-              activeView === 'list'
-                ? 'bg-white text-slate-800 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
-            ]">
-            Lista
-          </button>
-          <button
-            disabled
-            class="px-3 py-1.5 rounded-md text-sm font-medium text-slate-300 cursor-not-allowed select-none"
-            title="Em breve">
-            Agenda
-            <span class="text-xs opacity-70 ml-0.5">(em breve)</span>
-          </button>
-        </div>
-
         <!-- Espaçador -->
         <div class="flex-1"></div>
 

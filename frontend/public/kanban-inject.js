@@ -1,5 +1,5 @@
 /**
- * Kanban/CRM Inject v4.2
+ * Kanban/CRM Inject v4.5
  * - getSidebarWidth: 3 strategies (main content left edge, walk-up, CSS selector)
  * - extractContactFromDOM: multi-strategy name extraction (link text + DOM scan)
  * - Sidebar: CRM primeiro no nav de nível superior
@@ -14,6 +14,9 @@
   var KANBAN_URL    = 'https://vai-novofoco-kanban-chatwoot-frontend.dutk9f.easypanel.host';
   var ACCOUNT_TOKEN = '0fb0a7572850a512f7127633a15e844673bd3e6cf839fa75';
   var DEBUG         = true;
+
+  /* Não injetar no console super_admin do Chatwoot */
+  if (/\/super_admin/i.test(window.location.pathname)) return;
 
   if (window.__crmInjected) return;
   window.__crmInjected = true;
@@ -295,7 +298,7 @@
     panelEl.innerHTML =
       '<div id="crm-panel-content">' +
         '<div id="crm-panel-bar">' +
-          '<span>\uD83D\uDCCB CRM \u2014 Kanban</span>' +
+          '<span>CRM</span>' +
           '<button id="crm-panel-close" title="Fechar (Esc)">\u2715</button>' +
         '</div>' +
         '<iframe id="crm-iframe" src="" allow="*" title="CRM Kanban"></iframe>' +
@@ -553,14 +556,12 @@
     if (cwId)   url += '&cw_account_id=' + cwId;
     if (viewMode === 'products') {
       url += '#/settings/products';
-    } else if (viewMode === 'funnels') {
-      url += '#/settings/funnels';
+    } else if (viewMode === 'agenda') {
+      url += '#/agenda';
     } else if (funnelId) {
       url += '#/board/' + funnelId;
-      if (viewMode === 'list') url += '?view=list';
     } else {
       url += '#/board';
-      if (viewMode === 'list') url += '?view=list';
     }
 
     if (iframe.src !== url) iframe.src = url;
@@ -580,6 +581,13 @@
     if (h) h.classList.toggle('crm-active', panelEl && panelEl.classList.contains('crm-open'));
   }
 
+  /* ── Ícones SVG sem emoji (estilo Chatwoot) ── */
+  var NAV_ICONS = {
+    funnels: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="2" y="3" width="4" height="18" rx="1.2"/><rect x="9" y="3" width="4" height="12" rx="1.2"/><rect x="16" y="3" width="4" height="15" rx="1.2"/></svg>',
+    products:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+    agenda:  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
+  };
+
   function populateFunnels(list) {
     funnelListCache = list;
     var ul = document.getElementById('crm-funnel-list');
@@ -588,10 +596,9 @@
 
     /* ── Items de navegação fixos ── */
     var navDefs = [
-      { id: 'kanban',   icon: '📋', label: 'Kanban',           mode: 'kanban',   disabled: false },
-      { id: 'list',     icon: '📝', label: 'Listas',           mode: 'list',     disabled: false },
-      { id: 'products', icon: '📦', label: 'Produtos / Serv.', mode: 'products', disabled: false },
-      { id: 'agenda',   icon: '📅', label: 'Agenda',           mode: 'agenda',   disabled: true  }
+      { id: 'funnels',  icon: NAV_ICONS.funnels,  label: 'Funis',            mode: 'funnels',  disabled: false },
+      { id: 'products', icon: NAV_ICONS.products, label: 'Produtos / Serv.', mode: 'products', disabled: false },
+      { id: 'agenda',   icon: NAV_ICONS.agenda,   label: 'Agenda',           mode: 'agenda',   disabled: false }
     ];
 
     navDefs.forEach(function(def) {
@@ -601,8 +608,8 @@
       btn.setAttribute('data-nav', def.id);
       btn.disabled = def.disabled;
       btn.innerHTML =
-        '<span style="font-size:13px;flex-shrink:0">' + def.icon + '</span>' +
-        '<span>' + def.label + '</span>' +
+        def.icon +
+        '<span style="margin-left:8px">' + def.label + '</span>' +
         (def.disabled ? '<span style="font-size:10px;color:#9babb4;margin-left:auto">(em breve)</span>' : '');
       if (!def.disabled) {
         btn.addEventListener('click', (function(mode) {
@@ -615,21 +622,6 @@
       li.appendChild(btn);
       ul.appendChild(li);
     });
-
-    /* ── Se não há funis: link "Criar Funil" ── */
-    if (!list.length) {
-      var li2 = document.createElement('li');
-      var a   = document.createElement('button');
-      a.className = 'crm-funnel-item';
-      a.style.cssText = 'color:#1f93ff;font-size:12px;gap:6px';
-      a.innerHTML = '<span>＋</span><span>Criar Funil</span>';
-      a.addEventListener('click', function(e) {
-        e.stopPropagation();
-        openPanelWithView('funnels', this);
-      });
-      li2.appendChild(a);
-      ul.appendChild(li2);
-    }
 
     log('nav CRM montado | funis disponíveis:', list.length);
   }
@@ -755,7 +747,7 @@
       populateFunnels(data);
       updateActiveItem();
     });
-    log('\u2705 sidebar CRM injetado');
+    log('sidebar CRM injetado');
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
@@ -807,8 +799,10 @@
     btn.id = 'crm-extras-btn';
     btn.innerHTML =
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-      'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
-      '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>' +
+      'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<circle cx="12" cy="12" r="3"/>' +
+      '<path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>' +
+      '<path d="M4.93 4.93a10 10 0 0 0 0 14.14"/>' +
       '</svg> Fun\u00e7\u00f5es Extras';
 
     btn.addEventListener('click', function(e) {
@@ -828,7 +822,7 @@
 
     if (target.parentElement) {
       target.parentElement.insertBefore(btn, target);
-      log('\u2705 Fun\u00e7\u00f5es Extras injetado');
+      log('Funcoes Extras injetado');
     }
   }
 
@@ -880,31 +874,45 @@
     var body = document.getElementById('crm-modal-body');
     if (!body) return;
 
+    var ICON_FUNNEL =
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<rect x="2" y="3" width="4" height="18" rx="1.2"/><rect x="9" y="3" width="4" height="12" rx="1.2"/><rect x="16" y="3" width="4" height="15" rx="1.2"/></svg>';
+    var ICON_CLOCK =
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+    var ICON_FLOW =
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
+    var ICON_CAL =
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
+
     body.innerHTML =
       '<button class="crm-extra-option" id="crm-opt-funil">' +
-        '<div class="crm-opt-icon">\uD83D\uDCCB</div>' +
+        '<div class="crm-opt-icon">' + ICON_FUNNEL + '</div>' +
         '<div class="crm-opt-info">' +
           '<div class="crm-opt-title">Associar ao Funil</div>' +
           '<div class="crm-opt-desc">Vincular conversa a uma etapa do kanban</div>' +
         '</div>' +
         '<span class="crm-opt-arrow">\u203A</span>' +
       '</button>' +
-      '<button class="crm-extra-option crm-opt-disabled">' +
-        '<div class="crm-opt-icon">\uD83D\uDD50</div>' +
+      '<button class="crm-extra-option" id="crm-opt-agenda">' +
+        '<div class="crm-opt-icon">' + ICON_CLOCK + '</div>' +
         '<div class="crm-opt-info">' +
-          '<div class="crm-opt-title">Agendar Mensagens</div>' +
-          '<div class="crm-opt-desc">Em breve</div>' +
+          '<div class="crm-opt-title">Agendar Mensagem</div>' +
+          '<div class="crm-opt-desc">Programar envio automático para esta conversa</div>' +
         '</div>' +
+        '<span class="crm-opt-arrow">\u203A</span>' +
       '</button>' +
       '<button class="crm-extra-option crm-opt-disabled">' +
-        '<div class="crm-opt-icon">\uD83D\uDD04</div>' +
+        '<div class="crm-opt-icon">' + ICON_FLOW + '</div>' +
         '<div class="crm-opt-info">' +
           '<div class="crm-opt-title">Flow Sequ\u00eancia</div>' +
           '<div class="crm-opt-desc">Em breve</div>' +
         '</div>' +
       '</button>' +
       '<button class="crm-extra-option crm-opt-disabled">' +
-        '<div class="crm-opt-icon">\uD83D\uDCC5</div>' +
+        '<div class="crm-opt-icon">' + ICON_CAL + '</div>' +
         '<div class="crm-opt-info">' +
           '<div class="crm-opt-title">Agendar Atendimento</div>' +
           '<div class="crm-opt-desc">Em breve</div>' +
@@ -912,6 +920,98 @@
       '</button>';
 
     document.getElementById('crm-opt-funil').addEventListener('click', renderFunnelPicker);
+    document.getElementById('crm-opt-agenda').addEventListener('click', renderScheduleForm);
+  }
+
+  /* ── Agendar Mensagem ── */
+  function renderScheduleForm() {
+    setModalHeader(
+      '<button class="crm-modal-back-btn" id="crm-modal-back">\u2039 Voltar</button>'
+    );
+    document.getElementById('crm-modal-back').addEventListener('click', renderMainMenu);
+
+    var url = window.location.href;
+    var cm  = url.match(/\/conversations\/(\d+)/);
+    var conversationId = cm ? cm[1] : '';
+
+    /* Data/hora padrão: 1h a partir de agora, arredondado para 30min */
+    var now = new Date();
+    now.setMinutes(now.getMinutes() + 60 - (now.getMinutes() % 30));
+    var pad = function(n) { return String(n).padStart(2, '0'); };
+    var defaultDt = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate()) +
+                    'T' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+
+    var body = document.getElementById('crm-modal-body');
+    if (!body) return;
+    body.innerHTML =
+      '<div style="padding:4px 0 8px">' +
+        '<div style="margin-bottom:12px">' +
+          '<label style="font-size:11px;font-weight:600;color:#6b7280;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Mensagem *</label>' +
+          '<textarea id="crm-sched-msg" rows="4" placeholder="Digite a mensagem que será enviada automaticamente…" ' +
+            'style="width:100%;border:1px solid #e4e7ed;border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>' +
+        '</div>' +
+        '<div style="margin-bottom:12px">' +
+          '<label style="font-size:11px;font-weight:600;color:#6b7280;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Data e hora *</label>' +
+          '<input id="crm-sched-dt" type="datetime-local" value="' + defaultDt + '" ' +
+            'style="width:100%;border:1px solid #e4e7ed;border-radius:8px;padding:8px 10px;font-size:13px;box-sizing:border-box" />' +
+        '</div>' +
+        '<div style="margin-bottom:12px">' +
+          '<label style="font-size:11px;font-weight:600;color:#6b7280;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Conversa Chatwoot</label>' +
+          '<input id="crm-sched-conv" type="number" value="' + conversationId + '" placeholder="ID da conversa (ex: 42)" ' +
+            'style="width:100%;border:1px solid #e4e7ed;border-radius:8px;padding:8px 10px;font-size:13px;box-sizing:border-box" />' +
+        '</div>' +
+        '<div id="crm-sched-err" style="color:#dc2626;font-size:12px;margin-bottom:8px;display:none"></div>' +
+        '<button id="crm-sched-save" ' +
+          'style="width:100%;padding:10px;background:#1f93ff;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">' +
+          'Agendar mensagem' +
+        '</button>' +
+      '</div>';
+
+    document.getElementById('crm-sched-save').addEventListener('click', function() {
+      var msg   = (document.getElementById('crm-sched-msg').value || '').trim();
+      var dt    = document.getElementById('crm-sched-dt').value;
+      var conv  = document.getElementById('crm-sched-conv').value;
+      var errEl = document.getElementById('crm-sched-err');
+
+      if (!msg)  { errEl.textContent = 'Mensagem obrigatória.'; errEl.style.display = ''; return; }
+      if (!dt)   { errEl.textContent = 'Data obrigatória.'; errEl.style.display = ''; return; }
+      errEl.style.display = 'none';
+
+      var btn = document.getElementById('crm-sched-save');
+      btn.disabled = true; btn.textContent = 'Salvando…';
+
+      var payload = { message: msg, scheduled_at: dt };
+      if (conv) payload.chatwoot_conversation_id = Number(conv);
+
+      fetch(KANBAN_URL + '/api/v1/scheduled_messages', {
+        method: 'POST',
+        headers: Object.assign({}, apiHeaders(), { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ scheduled_message: payload })
+      })
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw d; });
+        return r.json();
+      })
+      .then(function() {
+        setModalHeader('<span>Fun\u00e7\u00f5es Extras</span>');
+        var b2 = document.getElementById('crm-modal-body');
+        if (b2) b2.innerHTML =
+          '<div class="crm-status-msg">' +
+            '<div class="crm-status-icon" style="color:#16a34a">' +
+              '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+              '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' +
+            '</div>' +
+            '<div class="crm-status-title">Mensagem agendada!</div>' +
+            '<div class="crm-status-sub">Será enviada em ' + new Date(dt).toLocaleString('pt-BR') + '</div>' +
+          '</div>';
+        setTimeout(closeModal, 2200);
+      })
+      .catch(function(e) {
+        btn.disabled = false; btn.textContent = 'Agendar mensagem';
+        var errs = (e && e.errors) ? e.errors.join(', ') : 'Erro ao agendar.';
+        errEl.textContent = errs; errEl.style.display = '';
+      });
+    });
   }
 
   /* ── Picker de funis (com check de duplicidade) ── */
@@ -1049,7 +1149,10 @@
       setModalHeader('<span>Fun\u00e7\u00f5es Extras</span>');
       body.innerHTML =
         '<div class="crm-status-msg">' +
-          '<div class="crm-status-icon">\u2705</div>' +
+          '<div class="crm-status-icon" style="color:#16a34a">' +
+            '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' +
+          '</div>' +
           '<div class="crm-status-title">Associado com sucesso!</div>' +
           '<div class="crm-status-sub">' + funnel.name + ' \u2192 ' + stage.name + '</div>' +
         '</div>';
@@ -1114,12 +1217,68 @@
     window.location.href = '/app/accounts/' + accountId + '/conversations/' + convId;
   });
 
+  /*
+   * Fecha o painel quando o usuário clica num item de nav que NÃO é do CRM.
+   * Usa capture:true para interceptar antes que o Vue Router navegue.
+   * Se o clique foi dentro do grupo CRM ou do painel, ignora.
+   */
+  function watchNonCrmClicks() {
+    document.addEventListener('click', function(e) {
+      if (!panelEl || !panelEl.classList.contains('crm-open')) return;
+
+      var target = e.target;
+
+      /* Clique dentro do grupo CRM no sidebar → não fechar */
+      var crmGroup = document.getElementById('crm-sidebar-group');
+      if (crmGroup && crmGroup.contains(target)) return;
+
+      /* Clique dentro do painel (conteúdo ou barra) → não fechar */
+      var crmContent = document.getElementById('crm-panel-content');
+      if (crmContent && crmContent.contains(target)) return;
+
+      /* Clique dentro do modal de Funções Extras → não fechar */
+      if (modalEl && modalEl.contains(target)) return;
+
+      /*
+       * Verifica se o clique foi num elemento de navegação do Chatwoot
+       * (link, botão ou qualquer ancestral que pareça item de nav).
+       * Critério: está fora do CRM e está dentro do sidebar (left ≤ getSidebarWidth()).
+       */
+      var rect = target.getBoundingClientRect ? target.getBoundingClientRect() : null;
+      if (rect && rect.right <= getSidebarWidth() + 16) {
+        /* Clique está dentro da área do sidebar — fechar painel */
+        closePanel();
+        return;
+      }
+
+      /* Também fecha se o clique foi num <a> ou <button> com href/data-key fora do CRM */
+      var node = target;
+      for (var i = 0; i < 8; i++) {
+        if (!node) break;
+        var tag = (node.tagName || '').toUpperCase();
+        if (tag === 'A' || tag === 'BUTTON') {
+          var href = node.getAttribute('href') || '';
+          /* Links de rota interna do Chatwoot (não CRM) → fecha painel */
+          if (href && href !== '#' && !href.startsWith('javascript')) {
+            var r2 = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+            if (r2 && r2.right <= getSidebarWidth() + 16) {
+              closePanel();
+            }
+          }
+          break;
+        }
+        node = node.parentElement;
+      }
+    }, true /* capture */);
+  }
+
   function boot() {
-    log('iniciando v4.2');
+    log('iniciando v4.5');
     injectStyles();
     ensurePanel();
     injectSidebar();
     watchRoutes();
+    watchNonCrmClicks();
     /* Tenta injetar botão Funções Extras na página atual */
     setTimeout(injectHeaderButton, 800);
     setTimeout(injectHeaderButton, 1600);

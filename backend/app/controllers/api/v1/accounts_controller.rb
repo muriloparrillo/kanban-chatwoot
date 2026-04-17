@@ -45,6 +45,30 @@ module Api
         render json: { synced: count }
       end
 
+      # POST /api/v1/accounts/sync_labels
+      # Importa os labels do Chatwoot como tags do CRM.
+      # Cria se não existir (match por nome, case-insensitive). Não remove tags existentes.
+      def sync_labels
+        raw = current_account.chatwoot_client.labels
+        # A API do Chatwoot retorna { payload: [ { id, title, color, ... }, ... ] }
+        label_list = (raw.is_a?(Hash) ? raw['payload'] : raw) || []
+        created = 0
+        label_list.each do |lbl|
+          title = lbl['title'].presence || lbl['name'].presence
+          next unless title
+          color = lbl['color'].presence || '#1f93ff'
+          existing = current_account.tags.where('LOWER(name) = ?', title.downcase).first
+          unless existing
+            current_account.tags.create!(name: title, color: color)
+            created += 1
+          end
+        end
+        render json: { synced: label_list.size, created: created,
+                       tags: current_account.tags.map { |t| { id: t.id, name: t.name, color: t.color } } }
+      rescue Chatwoot::Client::ApiError => e
+        render json: { error: e.message }, status: :bad_gateway
+      end
+
       private
 
       def account_params

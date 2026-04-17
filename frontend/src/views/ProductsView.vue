@@ -11,12 +11,13 @@ const error    = ref('');
 const form = ref(null);
 
 const emptyForm = () => ({
-  id:          null,
-  name:        '',
-  description: '',
-  value:       '',
-  currency:    'BRL',
-  active:      true
+  id:           null,
+  name:         '',
+  description:  '',
+  value:        '',
+  currency:     'BRL',
+  billing_type: 'one_time',
+  active:       true
 });
 
 const load = async () => {
@@ -54,11 +55,12 @@ const submit = async () => {
   error.value  = '';
   try {
     const payload = {
-      name:        form.value.name.trim(),
-      description: form.value.description || '',
-      value:       form.value.value !== '' ? Number(form.value.value) : null,
-      currency:    form.value.currency || 'BRL',
-      active:      form.value.active
+      name:         form.value.name.trim(),
+      description:  form.value.description || '',
+      value:        form.value.value !== '' ? Number(form.value.value) : null,
+      currency:     form.value.currency || 'BRL',
+      billing_type: form.value.billing_type || 'one_time',
+      active:       form.value.active
     };
     if (form.value.id) {
       await ProductsAPI.update(form.value.id, payload);
@@ -166,10 +168,20 @@ function fmtValue(val, currency) {
             <option value="EUR">EUR — Euro</option>
           </select>
         </div>
+        <!-- Tipo de cobrança -->
+        <div>
+          <label class="text-xs font-medium text-slate-500 block mb-1">Tipo de cobrança</label>
+          <select
+            v-model="form.billing_type"
+            class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
+            <option value="one_time">Único</option>
+            <option value="recurring">Recorrente</option>
+          </select>
+        </div>
         <!-- Ativo -->
-        <div class="col-span-2 flex items-center gap-2">
+        <div class="flex items-center gap-2 self-end pb-2">
           <input id="form-active" v-model="form.active" type="checkbox" class="rounded" />
-          <label for="form-active" class="text-sm text-slate-600">Produto ativo (aparece na lista de seleção)</label>
+          <label for="form-active" class="text-sm text-slate-600">Produto ativo</label>
         </div>
       </div>
 
@@ -196,6 +208,7 @@ function fmtValue(val, currency) {
           <tr class="bg-slate-50 border-b border-slate-200">
             <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Nome</th>
             <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Valor</th>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Tipo</th>
             <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
             <th class="px-4 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Ações</th>
           </tr>
@@ -210,6 +223,9 @@ function fmtValue(val, currency) {
               <div v-if="p.description" class="text-xs text-slate-400 truncate max-w-xs mt-0.5">{{ p.description }}</div>
             </td>
             <td class="px-4 py-3 text-slate-600 font-mono text-xs">{{ fmtValue(p.value, p.currency) }}</td>
+            <td class="px-4 py-3">
+              <span class="text-xs text-slate-500">{{ p.billing_type === 'recurring' ? 'Recorrente' : 'Único' }}</span>
+            </td>
             <td class="px-4 py-3">
               <span
                 :class="[

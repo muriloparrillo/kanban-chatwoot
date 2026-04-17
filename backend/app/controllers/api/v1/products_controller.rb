@@ -42,19 +42,20 @@ module Api
       end
 
       def product_params
-        params.require(:product).permit(:name, :description, :value, :currency, :active)
+        params.require(:product).permit(:name, :description, :value, :currency, :active, :billing_type)
       end
 
       def serialize(p)
         {
-          id:          p.id,
-          name:        p.name,
-          description: p.description,
-          value:       p.value,
-          currency:    p.currency,
-          active:      p.active,
-          created_at:  p.created_at,
-          updated_at:  p.updated_at
+          id:           p.id,
+          name:         p.name,
+          description:  p.description,
+          value:        p.value,
+          currency:     p.currency,
+          active:       p.active,
+          billing_type: p.billing_type,
+          created_at:   p.created_at,
+          updated_at:   p.updated_at
         }
       end
     end

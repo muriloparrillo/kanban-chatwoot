@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { LeadsAPI, TagsAPI, ProductsAPI } from '../services/api';
+import { LeadsAPI, TagsAPI, ProductsAPI, AccountsAPI } from '../services/api';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -14,12 +14,13 @@ const attachments = ref([]);
 const tags        = ref([]);
 const allTags     = ref([]);
 const allProducts = ref([]);
-const newNote     = ref('');
-const newTagId    = ref('');
-const newTagName  = ref('');
-const fileInput   = ref(null);
-const activeTab   = ref('notes');
-const saving      = ref(false);
+const newNote      = ref('');
+const newTagId     = ref('');
+const newTagName   = ref('');
+const fileInput    = ref(null);
+const activeTab    = ref('notes');
+const saving       = ref(false);
+const syncingTags  = ref(false);
 
 const load = async () => {
   // Promise.allSettled garante que uma falha (ex: products ainda sem migration)
@@ -71,12 +72,12 @@ const save = async () => {
   }
 };
 
-/* When a product is selected, pre-fill value if it has a default */
+/* Quando um produto é selecionado, sempre preenche o valor com o do produto */
 const onProductChange = () => {
   const pid = detail.value.product_id;
   if (!pid) return;
   const prod = allProducts.value.find(p => p.id === Number(pid));
-  if (prod && prod.value != null && !detail.value.value) {
+  if (prod && prod.value != null) {
     detail.value.value = prod.value;
   }
 };
@@ -106,6 +107,19 @@ const archive = async () => {
   await LeadsAPI.archive(props.lead.id);
   emit('updated');
   emit('close');
+};
+
+/* Sincroniza labels do Chatwoot como tags CRM */
+const syncLabels = async () => {
+  syncingTags.value = true;
+  try {
+    const { data } = await AccountsAPI.syncLabels();
+    allTags.value = data.tags || allTags.value;
+  } catch (e) {
+    console.warn('[CRM] syncLabels falhou', e);
+  } finally {
+    syncingTags.value = false;
+  }
 };
 
 const addTag = async () => {
@@ -243,7 +257,7 @@ const ensureContact = () => {
                 v-for="p in allProducts"
                 :key="p.id"
                 :value="p.id">
-                {{ p.name }}{{ p.value != null ? ' (' + p.currency + ' ' + Number(p.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ')' : '' }}
+                {{ p.name }}{{ p.value != null ? ' — ' + p.currency + ' ' + Number(p.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '' }}{{ p.billing_type === 'recurring' ? ' (Recorrente)' : '' }}
               </option>
             </select>
           </div>
@@ -373,7 +387,17 @@ const ensureContact = () => {
               </div>
               <div class="border-t border-slate-100 pt-3 space-y-3">
                 <div>
-                  <p class="text-xs text-slate-500 mb-1.5 font-medium">Tag existente:</p>
+                  <div class="flex items-center justify-between mb-1.5">
+                    <p class="text-xs text-slate-500 font-medium">Tag existente:</p>
+                    <button
+                      @click="syncLabels"
+                      :disabled="syncingTags"
+                      class="text-xs text-brand hover:underline disabled:opacity-50 flex items-center gap-1">
+                      <svg v-if="!syncingTags" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
+                      <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="animate-spin"><circle cx="12" cy="12" r="10"/></svg>
+                      {{ syncingTags ? 'Sincronizando…' : 'Sincronizar do Chatwoot' }}
+                    </button>
+                  </div>
                   <div class="flex gap-2">
                     <select v-model="newTagId" class="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
                       <option value="">Selecionar…</option>

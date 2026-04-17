@@ -76,7 +76,8 @@ export const AccountsAPI = {
   current:             () => api.get('/api/v1/accounts/current'),
   register:            (payload) => api.post('/api/v1/accounts', { account: payload }),
   update:              (payload) => api.patch('/api/v1/accounts/0', { account: payload }),
-  syncConversations:   (limit = 100) => api.post('/api/v1/accounts/sync_conversations', { limit })
+  syncConversations:   (limit = 100) => api.post('/api/v1/accounts/sync_conversations', { limit }),
+  syncLabels:          () => api.post('/api/v1/accounts/sync_labels')
 };
 
 export const FunnelsAPI = {
@@ -148,4 +149,12 @@ export const ProductsAPI = {
   create:  (payload) => api.post('/api/v1/products', { product: payload }),
   update:  (id, payload) => api.patch(`/api/v1/products/${id}`, { product: payload }),
   destroy: (id) => api.delete(`/api/v1/products/${id}`)
+};
+
+export const ScheduledMessagesAPI = {
+  list:       (params) => api.get('/api/v1/scheduled_messages', { params }),
+  create:     (payload) => api.post('/api/v1/scheduled_messages', { scheduled_message: payload }),
+  update:     (id, payload) => api.patch(`/api/v1/scheduled_messages/${id}`, { scheduled_message: payload }),
+  destroy:    (id) => api.delete(`/api/v1/scheduled_messages/${id}`),
+  processDue: () => api.post('/api/v1/scheduled_messages/process_due')
 };

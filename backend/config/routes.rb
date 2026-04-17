@@ -13,6 +13,7 @@ Rails.application.routes.draw do
           get :current
           post :sync_agents
           post :sync_conversations
+          post :sync_labels
         end
       end
 
@@ -54,6 +55,13 @@ Rails.application.routes.draw do
 
       # Products / Services catalog
       resources :products, only: %i[index create update destroy]
+
+      # Scheduled messages (Agenda)
+      resources :scheduled_messages, only: %i[index create update destroy] do
+        collection do
+          post :process_due
+        end
+      end
 
       # Agents (mirrored from Chatwoot)
       resources :agents, only: %i[index]

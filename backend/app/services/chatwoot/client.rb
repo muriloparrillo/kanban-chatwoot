@@ -34,6 +34,15 @@ module Chatwoot
       get("/api/v1/accounts/#{@account_id}/inboxes")
     end
 
+    def labels
+      get("/api/v1/accounts/#{@account_id}/labels")
+    end
+
+    def send_message(conversation_id, content, message_type: 'outgoing', private: false)
+      post("/api/v1/accounts/#{@account_id}/conversations/#{conversation_id}/messages",
+           { content: content, message_type: message_type, private: private })
+    end
+
     def register_webhook(url:, subscriptions: default_subscriptions)
       post("/api/v1/accounts/#{@account_id}/webhooks",
            { url: url, subscriptions: subscriptions })
