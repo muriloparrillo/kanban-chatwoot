@@ -974,12 +974,40 @@
         '</button>' +
       '</div>';
 
-    /* Carrega templates WhatsApp direto do Chatwoot (mesma origem, cookies de sessão automáticos)
-     * Os templates ficam em inbox.message_templates dos inboxes Channel::Whatsapp */
+    /* Carrega templates WhatsApp direto do Chatwoot.
+     * Chatwoot usa devise_token_auth → precisa dos headers access-token/client/uid
+     * que ficam no cookie cw_d_session_info (não-HttpOnly). */
     (function() {
       var cwId = getChatwootAccountId();
       if (!cwId) { log('templates: sem cwId'); return; }
-      fetch('/api/v1/accounts/' + cwId + '/inboxes', { credentials: 'include' })
+
+      /* Lê os headers de auth do cookie de sessão do Chatwoot */
+      function getChatwootAuthHeaders() {
+        try {
+          var raw = document.cookie.split(';').reduce(function(acc, c) {
+            var idx = c.indexOf('=');
+            if (idx < 0) return acc;
+            acc[c.slice(0, idx).trim()] = c.slice(idx + 1).trim();
+            return acc;
+          }, {});
+          var val = raw['cw_d_session_info'];
+          if (!val) return null;
+          var info = JSON.parse(decodeURIComponent(val));
+          if (!info['access-token'] || !info['client'] || !info['uid']) return null;
+          return {
+            'access-token': info['access-token'],
+            'token-type':   info['token-type'] || 'Bearer',
+            'client':       info['client'],
+            'uid':          info['uid']
+          };
+        } catch(e) { return null; }
+      }
+
+      var authHeaders = getChatwootAuthHeaders();
+      if (!authHeaders) { log('templates: cookie cw_d_session_info não encontrado'); return; }
+      log('templates: auth headers ok, buscando inboxes...');
+
+      fetch('/api/v1/accounts/' + cwId + '/inboxes', { headers: authHeaders })
         .then(function(r) { return r.json(); })
         .then(function(data) {
           var tplSel = document.getElementById('crm-sched-tpl');
