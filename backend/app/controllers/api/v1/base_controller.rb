@@ -13,6 +13,7 @@ module Api
     #   3. token apenas           → fallback (conta única / sem header)
     class BaseController < ApplicationController
       before_action :authenticate_account!
+      after_action  :log_api_access
 
       attr_reader :current_account
 
@@ -73,6 +74,15 @@ module Api
           id:   request.headers['X-Chatwoot-User-Id'],
           name: request.headers['X-Chatwoot-User-Name']
         }
+      end
+
+      def log_api_access
+        return if @current_account.nil?
+        Rails.logger.info(
+          "[CRM] #{request.method} #{request.path} " \
+          "account=#{@current_account.id} cw=#{@current_account.chatwoot_account_id} " \
+          "user=#{current_actor[:id]} status=#{response.status}"
+        )
       end
     end
   end

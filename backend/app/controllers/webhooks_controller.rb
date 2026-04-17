@@ -4,6 +4,17 @@
 class WebhooksController < ApplicationController
   def chatwoot
     account = Account.find_by!(account_token: params[:account_token])
+
+    # Verifica assinatura HMAC se o Chatwoot enviar o header (opcional mas seguro)
+    signature = request.headers['X-Chatwoot-Webhook-Signature']
+    if signature.present?
+      expected = OpenSSL::HMAC.hexdigest('SHA256', account.webhook_secret.to_s, request.raw_post)
+      unless ActiveSupport::SecurityUtils.secure_compare(expected, signature)
+        Rails.logger.warn "[CRM] Webhook HMAC inválido para account #{account.id}"
+        return render json: { error: 'invalid_signature' }, status: :unauthorized
+      end
+    end
+
     event   = params[:event] || request.headers['X-Chatwoot-Event']
     payload = params.to_unsafe_h.except(:account_token, :controller, :action)
 

@@ -57,7 +57,10 @@ module Api
 
       # PATCH /api/v1/leads/:id/move  body: { stage_id:, position: }
       def move
-        stage = current_account.funnels.joins(:stages).where(stages: { id: params[:stage_id] }).first&.stages&.find(params[:stage_id])
+        # Garante que o stage pertence a um funnel desta conta — mesmo padrão do bulk_move
+        stage = Stage.joins(funnel: :account)
+                     .where(accounts: { id: current_account.id }, stages: { id: params[:stage_id] })
+                     .first
         return render json: { error: 'stage_not_found' }, status: :not_found unless stage
 
         @lead.move_to!(stage, actor: current_actor, position: params[:position])

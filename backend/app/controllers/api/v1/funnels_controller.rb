@@ -52,6 +52,12 @@ module Api
       # body: { order: [stage_id_1, stage_id_2, ...] }
       def reorder_stages
         ids = Array(params[:order]).map(&:to_i)
+
+        # Valida que todos os IDs pertencem a este funnel
+        valid_ids = @funnel.stages.pluck(:id)
+        invalid   = ids - valid_ids
+        return render json: { error: 'invalid_stage_ids', ids: invalid }, status: :bad_request if invalid.any?
+
         Stage.transaction do
           ids.each_with_index do |sid, idx|
             @funnel.stages.where(id: sid).update_all(position: idx)
