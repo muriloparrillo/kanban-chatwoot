@@ -45,6 +45,16 @@ module Api
         render json: { synced: count }
       end
 
+      # GET /api/v1/accounts/message_templates
+      # Retorna templates de mensagem aprovados do WhatsApp via Chatwoot API
+      def message_templates
+        raw = current_account.chatwoot_client.message_templates
+        templates = (raw.is_a?(Array) ? raw : raw.dig('payload') || raw.dig('templates') || [])
+        render json: templates
+      rescue Chatwoot::Client::ApiError => e
+        render json: { error: e.message }, status: :bad_gateway
+      end
+
       # POST /api/v1/accounts/sync_labels
       # Importa os labels do Chatwoot como tags do CRM.
       # Cria se não existir (match por nome, case-insensitive). Não remove tags existentes.

@@ -38,6 +38,14 @@ module Chatwoot
       get("/api/v1/accounts/#{@account_id}/labels")
     end
 
+    def message_templates(template_type: 'whatsapp')
+      get("/api/v1/accounts/#{@account_id}/message_templates",
+          { template_type: template_type }.compact)
+    rescue ApiError
+      # Alguns planos não têm acesso; retorna array vazio em vez de explodir
+      []
+    end
+
     def send_message(conversation_id, content, message_type: 'outgoing', private: false)
       post("/api/v1/accounts/#{@account_id}/conversations/#{conversation_id}/messages",
            { content: content, message_type: message_type, private: private })

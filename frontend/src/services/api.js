@@ -76,8 +76,9 @@ export const AccountsAPI = {
   current:             () => api.get('/api/v1/accounts/current'),
   register:            (payload) => api.post('/api/v1/accounts', { account: payload }),
   update:              (payload) => api.patch('/api/v1/accounts/0', { account: payload }),
-  syncConversations:   (limit = 100) => api.post('/api/v1/accounts/sync_conversations', { limit }),
-  syncLabels:          () => api.post('/api/v1/accounts/sync_labels')
+  syncConversations:    (limit = 100) => api.post('/api/v1/accounts/sync_conversations', { limit }),
+  syncLabels:           () => api.post('/api/v1/accounts/sync_labels'),
+  messageTemplates:     () => api.get('/api/v1/accounts/message_templates')
 };
 
 export const FunnelsAPI = {
@@ -127,6 +128,10 @@ export const LeadsAPI = {
     destroy: (leadId, id) => api.delete(`/api/v1/leads/${leadId}/attachments/${id}`)
   },
   histories: (leadId) => api.get(`/api/v1/leads/${leadId}/histories`),
+  leadProducts: {
+    add:    (leadId, productId) => api.post(`/api/v1/leads/${leadId}/lead_products`, { product_id: productId }),
+    remove: (leadId, lpId)      => api.delete(`/api/v1/leads/${leadId}/lead_products/${lpId}`)
+  },
   tags: {
     list:   (leadId) => api.get(`/api/v1/leads/${leadId}/tags`),
     add:    (leadId, payload) => api.post(`/api/v1/leads/${leadId}/tags`, payload),

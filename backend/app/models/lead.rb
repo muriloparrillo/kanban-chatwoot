@@ -2,11 +2,13 @@ class Lead < ApplicationRecord
   belongs_to :account
   belongs_to :funnel
   belongs_to :stage
-  belongs_to :product, optional: true
+  belongs_to :product, optional: true  # mantido para retrocompatibilidade
 
-  has_many :notes,        class_name: 'LeadNote',       dependent: :destroy
-  has_many :attachments,  class_name: 'LeadAttachment', dependent: :destroy
-  has_many :histories,    class_name: 'LeadHistory',    dependent: :destroy
+  has_many :notes,         class_name: 'LeadNote',       dependent: :destroy
+  has_many :attachments,   class_name: 'LeadAttachment', dependent: :destroy
+  has_many :histories,     class_name: 'LeadHistory',    dependent: :destroy
+  has_many :lead_products, dependent: :destroy
+  has_many :products,      through: :lead_products
   has_and_belongs_to_many :tags
 
   validates :title, presence: true

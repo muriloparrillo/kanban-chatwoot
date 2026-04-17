@@ -945,9 +945,16 @@
     if (!body) return;
     body.innerHTML =
       '<div style="padding:4px 0 8px">' +
+        /* Templates dropdown (populado via API assíncrona) */
+        '<div style="margin-bottom:12px">' +
+          '<label style="font-size:11px;font-weight:600;color:#6b7280;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Modelo aprovado (WhatsApp)</label>' +
+          '<select id="crm-sched-tpl" style="width:100%;border:1px solid #e4e7ed;border-radius:8px;padding:8px 10px;font-size:13px;box-sizing:border-box">' +
+            '<option value="">Carregando modelos…</option>' +
+          '</select>' +
+        '</div>' +
         '<div style="margin-bottom:12px">' +
           '<label style="font-size:11px;font-weight:600;color:#6b7280;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Mensagem *</label>' +
-          '<textarea id="crm-sched-msg" rows="4" placeholder="Digite a mensagem que será enviada automaticamente…" ' +
+          '<textarea id="crm-sched-msg" rows="4" placeholder="Digite a mensagem ou selecione um modelo acima…" ' +
             'style="width:100%;border:1px solid #e4e7ed;border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>' +
         '</div>' +
         '<div style="margin-bottom:12px">' +
@@ -966,6 +973,35 @@
           'Agendar mensagem' +
         '</button>' +
       '</div>';
+
+    /* Carrega templates WhatsApp do Chatwoot via backend */
+    fetch(KANBAN_URL + '/api/v1/accounts/message_templates', { headers: apiHeaders() })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var tplSel = document.getElementById('crm-sched-tpl');
+        if (!tplSel) return;
+        var list = Array.isArray(data) ? data : (data.payload || data.templates || []);
+        if (!list.length) {
+          tplSel.innerHTML = '<option value="">Nenhum modelo aprovado encontrado</option>';
+          return;
+        }
+        tplSel.innerHTML = '<option value="">— Selecionar modelo —</option>' +
+          list.filter(function(t) {
+            return !t.status || t.status === 'approved' || t.status === 'APPROVED';
+          }).map(function(t) {
+            var body = t.body || t.content || t.components && (t.components.find(function(c){return c.type==='BODY';}) || {}).text || '';
+            return '<option value="' + encodeURIComponent(body) + '">' + (t.name || t.title || 'Template') + '</option>';
+          }).join('');
+        tplSel.addEventListener('change', function() {
+          var msgEl = document.getElementById('crm-sched-msg');
+          if (!msgEl) return;
+          if (tplSel.value) msgEl.value = decodeURIComponent(tplSel.value);
+        });
+      })
+      .catch(function() {
+        var tplSel = document.getElementById('crm-sched-tpl');
+        if (tplSel) tplSel.innerHTML = '<option value="">Não foi possível carregar modelos</option>';
+      });
 
     document.getElementById('crm-sched-save').addEventListener('click', function() {
       var msg   = (document.getElementById('crm-sched-msg').value || '').trim();

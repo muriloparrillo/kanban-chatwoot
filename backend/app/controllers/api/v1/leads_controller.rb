@@ -111,6 +111,7 @@ module Api
       end
 
       def serialize(l, detailed: false)
+        lead_products = l.lead_products.includes(:product)
         base = {
           id: l.id, title: l.title, description: l.description,
           value: l.value, currency: l.currency,
@@ -124,8 +125,13 @@ module Api
           priority: l.priority, due_at: l.due_at, last_activity_at: l.last_activity_at,
           moved_to_stage_at: l.moved_to_stage_at, source: l.source,
           tag_ids: l.tag_ids, custom_fields: l.custom_fields,
-          product: l.product && { id: l.product.id, name: l.product.name, value: l.product.value, currency: l.product.currency },
-          product_id: l.product_id,
+          # Múltiplos produtos via lead_products
+          lead_products: lead_products.map { |lp|
+            { id: lp.id, product_id: lp.product_id, unit_value: lp.unit_value,
+              product: { id: lp.product.id, name: lp.product.name,
+                         value: lp.product.value, currency: lp.product.currency,
+                         billing_type: lp.product.billing_type } }
+          },
           created_at: l.created_at, updated_at: l.updated_at
         }
         if detailed

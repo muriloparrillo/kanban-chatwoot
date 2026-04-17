@@ -11,6 +11,7 @@ Rails.application.routes.draw do
       resources :accounts, only: %i[create show update] do
         collection do
           get :current
+          get :message_templates
           post :sync_agents
           post :sync_conversations
           post :sync_labels
@@ -41,10 +42,11 @@ Rails.application.routes.draw do
           post  :unarchive
         end
 
-        resources :notes,       only: %i[index create update destroy]
-        resources :attachments, only: %i[index create destroy]
-        resources :histories,   only: %i[index]
-        resources :tags,        only: %i[index create destroy]
+        resources :notes,         only: %i[index create update destroy]
+        resources :attachments,   only: %i[index create destroy]
+        resources :histories,     only: %i[index]
+        resources :tags,          only: %i[index create destroy]
+        resources :lead_products, only: %i[create destroy]
       end
 
       # Board view aggregate (one call = full board payload)

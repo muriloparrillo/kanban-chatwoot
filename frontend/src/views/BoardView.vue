@@ -14,10 +14,21 @@ import ListView from '../components/ListView.vue';
 const route = useRouter();
 const routeInfo = useRoute();
 const store = useBoardStore();
-const { stages, filteredLeadsByStage, loading, error, currentFunnelId, funnels } = storeToRefs(store);
+const { stages, filteredLeadsByStage, leadsByStage, loading, error, currentFunnelId, funnels } = storeToRefs(store);
 
 const activeLead = ref(null);
 const activeView = ref('kanban'); // 'kanban' | 'list'
+
+/* ── Filtros activos? Desabilita DnD quando há filtro ── */
+const hasFilter = computed(() =>
+  !!(store.filter.q || store.filter.assigneeId || store.filter.tagId || store.filter.priority != null)
+);
+
+/* ── Visibilidade de card quando há filtro ── */
+function isVisible(stageId, leadId) {
+  if (!hasFilter.value) return true;
+  return (filteredLeadsByStage.value[stageId] || []).some(l => l.id === leadId);
+}
 
 /* ── Stats ── */
 const statsLeads = computed(() => {
@@ -42,7 +53,6 @@ const fmtCurrency = (v) =>
   'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 onMounted(async () => {
-  // Permite que o sidebar do inject abra direto na view lista via ?view=list
   if (routeInfo.query.view === 'list') activeView.value = 'list';
 
   await store.loadFunnels();
@@ -58,8 +68,11 @@ watch(() => routeInfo.params.funnelId, async (v) => {
   await store.loadBoard(store.currentFunnelId);
 });
 
-// vuedraggable fires @change on the TARGET container with ev.added.
-// The lists are already mutated — we just persist to the API.
+/*
+ * DnD: vuedraggable dispara @change no container DESTINO com ev.added.
+ * O :list aponta para leadsByStage[stage.id] — a array real do store —
+ * então a mutação persiste. Apenas persistimos para a API aqui.
+ */
 const handleChange = async (stageId, ev) => {
   if (ev.added) {
     const lead = ev.added.element;
@@ -89,6 +102,32 @@ const closeLead = () => { activeLead.value = null; };
           :model-value="currentFunnelId"
           @update:modelValue="(id) => route.push({ name: 'board-funnel', params: { funnelId: id } })"
         />
+
+        <!-- Toggle Kanban / Lista -->
+        <div class="flex items-center gap-0.5 border border-slate-200 rounded-lg p-0.5 bg-slate-50">
+          <button
+            @click="activeView = 'kanban'"
+            :class="[
+              'px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5',
+              activeView === 'kanban'
+                ? 'bg-white text-slate-800 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            ]">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="4" height="18" rx="1"/><rect x="9" y="3" width="4" height="12" rx="1"/><rect x="16" y="3" width="4" height="15" rx="1"/></svg>
+            Kanban
+          </button>
+          <button
+            @click="activeView = 'list'"
+            :class="[
+              'px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5',
+              activeView === 'list'
+                ? 'bg-white text-slate-800 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            ]">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            Lista
+          </button>
+        </div>
 
         <!-- Espaçador -->
         <div class="flex-1"></div>
@@ -144,8 +183,15 @@ const closeLead = () => { activeLead.value = null; };
             <span v-else-if="stage.stage_type === 'lost'" class="text-xs text-slate-500">PERDIDO</span>
           </div>
 
+          <!--
+            :list aponta para leadsByStage[stage.id] — array REAL do store.
+            Vuedraggable muta esse array diretamente (splice), e a mutação persiste
+            no Pinia. filteredLeadsByStage só é usado para contar e ocultar cards
+            quando há filtro ativo (v-show). DnD fica desabilitado com filtro ativo.
+          -->
           <draggable
-            :list="filteredLeadsByStage[stage.id] || []"
+            :list="leadsByStage[stage.id] || []"
+            :disabled="hasFilter"
             group="leads"
             item-key="id"
             class="flex-1 p-2 space-y-2 overflow-y-auto scroll-thin"
@@ -153,7 +199,9 @@ const closeLead = () => { activeLead.value = null; };
             drag-class="card-drag"
             @change="(ev) => handleChange(stage.id, ev)">
             <template #item="{ element }">
-              <LeadCard :lead="element" @click="openLead(element)" />
+              <div v-show="isVisible(stage.id, element.id)">
+                <LeadCard :lead="element" @click="openLead(element)" />
+              </div>
             </template>
           </draggable>
         </div>
