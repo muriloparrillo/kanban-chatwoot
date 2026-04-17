@@ -974,34 +974,53 @@
         '</button>' +
       '</div>';
 
-    /* Carrega templates WhatsApp do Chatwoot via backend */
-    fetch(KANBAN_URL + '/api/v1/accounts/message_templates', { headers: apiHeaders() })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        var tplSel = document.getElementById('crm-sched-tpl');
-        if (!tplSel) return;
-        var list = Array.isArray(data) ? data : (data.payload || data.templates || []);
-        if (!list.length) {
-          tplSel.innerHTML = '<option value="">Nenhum modelo aprovado encontrado</option>';
-          return;
-        }
-        tplSel.innerHTML = '<option value="">— Selecionar modelo —</option>' +
-          list.filter(function(t) {
-            return !t.status || t.status === 'approved' || t.status === 'APPROVED';
-          }).map(function(t) {
-            var body = t.body || t.content || t.components && (t.components.find(function(c){return c.type==='BODY';}) || {}).text || '';
-            return '<option value="' + encodeURIComponent(body) + '">' + (t.name || t.title || 'Template') + '</option>';
-          }).join('');
-        tplSel.addEventListener('change', function() {
-          var msgEl = document.getElementById('crm-sched-msg');
-          if (!msgEl) return;
-          if (tplSel.value) msgEl.value = decodeURIComponent(tplSel.value);
+    /* Carrega templates WhatsApp direto do Chatwoot (mesma origem, cookies de sessão automáticos)
+     * Os templates ficam em inbox.message_templates dos inboxes Channel::Whatsapp */
+    (function() {
+      var cwId = getChatwootAccountId();
+      if (!cwId) { log('templates: sem cwId'); return; }
+      fetch('/api/v1/accounts/' + cwId + '/inboxes', { credentials: 'include' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var tplSel = document.getElementById('crm-sched-tpl');
+          if (!tplSel) return;
+          var inboxes = Array.isArray(data) ? data : (data.payload || []);
+          var list = [];
+          inboxes.forEach(function(inbox) {
+            if (inbox.channel_type && inbox.channel_type.indexOf('Whatsapp') !== -1) {
+              var tpls = inbox.message_templates;
+              if (Array.isArray(tpls)) list = list.concat(tpls);
+            }
+          });
+          log('templates carregados:', list.length);
+          if (!list.length) {
+            tplSel.innerHTML = '<option value="">Nenhum modelo aprovado encontrado</option>';
+            return;
+          }
+          tplSel.innerHTML = '<option value="">— Selecionar modelo —</option>' +
+            list.filter(function(t) {
+              return !t.status || t.status === 'APPROVED' || t.status === 'approved';
+            }).map(function(t) {
+              var body = '';
+              if (t.components && Array.isArray(t.components)) {
+                var bc = t.components.find(function(c) { return c.type === 'BODY'; });
+                body = bc ? (bc.text || '') : '';
+              }
+              body = body || t.body || t.content || '';
+              return '<option value="' + encodeURIComponent(body) + '">' + (t.name || 'Template') + '</option>';
+            }).join('');
+          tplSel.addEventListener('change', function() {
+            var msgEl = document.getElementById('crm-sched-msg');
+            if (!msgEl) return;
+            if (tplSel.value) msgEl.value = decodeURIComponent(tplSel.value);
+          });
+        })
+        .catch(function(e) {
+          log('templates erro:', e);
+          var tplSel = document.getElementById('crm-sched-tpl');
+          if (tplSel) tplSel.innerHTML = '<option value="">Não foi possível carregar modelos</option>';
         });
-      })
-      .catch(function() {
-        var tplSel = document.getElementById('crm-sched-tpl');
-        if (tplSel) tplSel.innerHTML = '<option value="">Não foi possível carregar modelos</option>';
-      });
+    }());
 
     document.getElementById('crm-sched-save').addEventListener('click', function() {
       var msg   = (document.getElementById('crm-sched-msg').value || '').trim();
